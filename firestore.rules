@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users: hanya bisa baca/tulis data sendiri, admin bisa semua
+    match /users/{userId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Pendaftaran: mahasiswa hanya data sendiri, admin bisa semua
+    match /pendaftaran/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid && resource.data.status in ['draft', 'ditolak']
+        || isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Kamar: semua user bisa baca, hanya admin bisa tulis
+    match /kamar/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Penghuni: hanya admin
+    match /penghuni/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Notifikasi: user hanya baca milik sendiri, admin bisa buat
+    match /notifikasi/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      allow create: if isAdmin();
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
