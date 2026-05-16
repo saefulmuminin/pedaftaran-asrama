@@ -72,6 +72,24 @@ export default function DetailPendaftarPage() {
     }
   };
 
+  const sendEmail = async (
+    to: string,
+    nama: string,
+    status: "diterima" | "ditolak",
+    nomorKamar?: string,
+    catatanAdmin?: string
+  ) => {
+    try {
+      await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, nama, status, nomorKamar, catatanAdmin }),
+      });
+    } catch {
+      // Email gagal tidak membatalkan proses utama
+    }
+  };
+
   const handleApprove = async () => {
     if (!pendaftaran || !selectedKamar) {
       error("Pilih kamar terlebih dahulu");
@@ -117,9 +135,16 @@ export default function DetailPendaftarPage() {
         createdAt: Timestamp.now(),
       });
 
+      await sendEmail(
+        pendaftaran.email,
+        pendaftaran.namaLengkap,
+        "diterima",
+        kamar?.nomorKamar
+      );
+
       setPendaftaran((prev) => prev ? { ...prev, status: "diterima", nomorKamar: kamar?.nomorKamar } : null);
       setApproveModal(false);
-      success("Pendaftar berhasil diterima!");
+      success("Pendaftar berhasil diterima! Email notifikasi terkirim.");
     } catch {
       error("Gagal memproses penerimaan.");
     } finally {
@@ -144,9 +169,18 @@ export default function DetailPendaftarPage() {
         dibaca: false,
         createdAt: Timestamp.now(),
       });
+
+      await sendEmail(
+        pendaftaran.email,
+        pendaftaran.namaLengkap,
+        "ditolak",
+        undefined,
+        rejectNote
+      );
+
       setPendaftaran((prev) => prev ? { ...prev, status: "ditolak", catatanAdmin: rejectNote } : null);
       setRejectModal(false);
-      success("Pendaftar ditandai ditolak.");
+      success("Pendaftar ditandai ditolak. Email notifikasi terkirim.");
     } catch {
       error("Gagal memperbarui status.");
     } finally {

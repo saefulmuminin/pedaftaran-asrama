@@ -111,7 +111,7 @@ export default function LandingPage() {
                   className="px-6 py-2.5 text-sm font-bold text-slate-700 hover:text-primary-600 transition-colors">
                   Masuk
                 </Link>
-                <Link href="/register"
+                <Link href="/daftar"
                   className="px-8 py-3 bg-primary-600 text-white text-sm font-bold rounded-2xl hover:bg-primary-700 transition-all shadow-premium hover:scale-[1.02] active:scale-[0.98]">
                   Daftar Sekarang
                 </Link>
@@ -144,7 +144,7 @@ export default function LandingPage() {
                   <Link href="/login" className="flex-1 py-3.5 text-center text-sm font-bold border-2 border-slate-100 rounded-2xl text-slate-700" onClick={() => setMobileMenuOpen(false)}>
                     Masuk
                   </Link>
-                  <Link href="/register" className="flex-1 py-3.5 text-center text-sm font-bold bg-primary-600 text-white rounded-2xl shadow-premium" onClick={() => setMobileMenuOpen(false)}>
+                  <Link href="/daftar" className="flex-1 py-3.5 text-center text-sm font-bold bg-primary-600 text-white rounded-2xl shadow-premium" onClick={() => setMobileMenuOpen(false)}>
                     Daftar
                   </Link>
                 </>
@@ -176,7 +176,7 @@ export default function LandingPage() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-5 justify-center lg:justify-start pt-4">
-                <Link href="/register"
+                <Link href="/daftar"
                   className="inline-flex items-center justify-center gap-3 px-10 py-5 bg-primary-600 text-white font-extrabold rounded-3xl hover:bg-primary-700 transition-all shadow-premium hover:scale-[1.05] active:scale-[0.98] text-lg">
                   Mulai Daftar <ArrowRight className="w-5 h-5" />
                 </Link>
@@ -377,7 +377,7 @@ export default function LandingPage() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center pt-6">
-                <Link href="/register"
+                <Link href="/daftar"
                   className="group relative px-8 md:px-12 py-5 md:py-6 bg-primary-600 text-white font-black rounded-2xl md:rounded-[2rem] overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-[0_20px_40px_-15px_rgba(124,58,237,0.5)] w-full sm:w-auto text-center">
                   <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                   <span className="flex items-center justify-center gap-3 text-lg">
@@ -431,7 +431,7 @@ export default function LandingPage() {
             <div>
               <h4 className="text-slate-900 font-extrabold mb-8 text-sm uppercase tracking-widest">Tautan Cepat</h4>
               <ul className="space-y-4 font-bold text-sm text-slate-500">
-                <li><Link href="/register" className="hover:text-primary-600 transition-colors">Pendaftaran</Link></li>
+                <li><Link href="/daftar" className="hover:text-primary-600 transition-colors">Pendaftaran</Link></li>
                 <li><Link href="/login" className="hover:text-primary-600 transition-colors">Akses Akun</Link></li>
                 <li><a href="#fitur" className="hover:text-primary-600 transition-colors">Informasi Fitur</a></li>
                 <li><a href="#fasilitas" className="hover:text-primary-600 transition-colors">Fasilitas Umum</a></li>
