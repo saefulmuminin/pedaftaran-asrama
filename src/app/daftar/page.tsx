@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -17,8 +17,12 @@ import {
   ArrowRight,
   ArrowLeft,
   Mail,
-  Calendar,
   Info,
+  ScanLine,
+  Loader2,
+  AlertCircle,
+  X,
+  RefreshCw,
 } from "lucide-react";
 import {
   createUserWithEmailAndPassword,
@@ -30,6 +34,250 @@ import { createUserProfile, createPendaftaran } from "@/lib/firestore";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
+
+// ── KTP OCR helpers ───────────────────────────────────────────────────────────
+
+interface KTPData {
+  nik?: string;
+  namaLengkap?: string;
+  tempatLahir?: string;
+  tanggalLahir?: string;
+  jenisKelamin?: "L" | "P";
+  agama?: string;
+  alamatAsal?: string;
+  kabupatenAsal?: string;
+}
+
+function parseDate(raw: string): string {
+  const clean = raw.replace(/[^0-9]/g, "-").replace(/--+/g, "-");
+  const parts = clean.split("-").filter(Boolean);
+  if (parts.length < 3) return "";
+  const [d, m, y] = parts;
+  const fullY = y.length === 2 ? (parseInt(y) <= 30 ? `20${y}` : `19${y}`) : y;
+  if (fullY.length !== 4) return "";
+  return `${fullY}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+
+function parseKTPText(rawText: string): KTPData {
+  const text = rawText.replace(/[|}{[\]\\]/g, " ").replace(/\s+/g, " ").toUpperCase();
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const result: KTPData = {};
+
+  const nikMatch = text.match(/\b(\d{16})\b/);
+  if (nikMatch) result.nik = nikMatch[1];
+
+  for (const line of lines) {
+    const m = line.match(/NAMA\s*[:.]*\s*([A-Z\s]{3,40})/);
+    if (m) {
+      result.namaLengkap = m[1].trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+      break;
+    }
+  }
+
+  for (const line of lines) {
+    const m = line.match(
+      /(?:TEMPAT[/,]?\s*TGL|LAHIR)[^A-Z]*([A-Z\s]{2,25})[,/]\s*(\d{2}[-./]\d{2}[-./]\d{4})/i
+    );
+    if (m) {
+      result.tempatLahir = m[1].trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+      result.tanggalLahir = parseDate(m[2]);
+      break;
+    }
+  }
+
+  if (text.includes("LAKI-LAKI") || text.includes("LAKI LAKI")) result.jenisKelamin = "L";
+  else if (text.includes("PEREMPUAN")) result.jenisKelamin = "P";
+
+  for (const ag of ["ISLAM", "KRISTEN", "KATOLIK", "HINDU", "BUDDHA", "KONGHUCU"]) {
+    if (text.includes(ag)) {
+      result.agama = ag.charAt(0) + ag.slice(1).toLowerCase();
+      break;
+    }
+  }
+
+  for (const line of lines) {
+    const m = line.match(/^ALAMAT\s*[:.]*\s*(.{3,})/);
+    if (m) {
+      result.alamatAsal = m[1].trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+      break;
+    }
+  }
+
+  const kabList = [
+    "KOTA JAMBI", "BATANGHARI", "BUNGO", "KERINCI", "MERANGIN", "MUARO JAMBI",
+    "SAROLANGUN", "SUNGAI PENUH", "TANJUNG JABUNG BARAT", "TANJUNG JABUNG TIMUR", "TEBO",
+  ];
+  for (const k of kabList) {
+    if (text.includes(k)) {
+      result.kabupatenAsal = k.charAt(0) + k.slice(1).toLowerCase();
+      break;
+    }
+  }
+
+  return result;
+}
+
+// ── KTP Scanner (OCR only — no login / no upload needed) ─────────────────────
+
+function KTPScannerPublic({ onResult }: { onResult: (data: KTPData) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState<"idle" | "scanning" | "done" | "error">("idle");
+  const [progress, setProgress] = useState(0);
+  const [progressMsg, setProgressMsg] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [filledCount, setFilledCount] = useState(0);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setStatus("error");
+      return;
+    }
+    setPreviewUrl(URL.createObjectURL(file));
+    setStatus("scanning");
+    setProgressMsg("Memproses gambar...");
+    setProgress(10);
+
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("ind+eng", 1, {
+        logger: (m) => {
+          if (m.status === "recognizing text") {
+            setProgress(10 + Math.round(m.progress * 80));
+            setProgressMsg(`Membaca KTP... ${Math.round(m.progress * 100)}%`);
+          }
+        },
+      });
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+
+      setProgress(95);
+      setProgressMsg("Menganalisis data...");
+      const parsed = parseKTPText(data.text);
+      const count = Object.values(parsed).filter(Boolean).length;
+      setFilledCount(count);
+      setProgress(100);
+      setStatus("done");
+      onResult(parsed);
+    } catch (e) {
+      console.error("KTP OCR error:", e);
+      setStatus("error");
+    }
+  };
+
+  const reset = () => {
+    setStatus("idle");
+    setProgress(0);
+    setProgressMsg("");
+    setPreviewUrl("");
+    setFilledCount(0);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  if (status === "idle") {
+    return (
+      <div
+        className="border-2 border-dashed border-primary-200 rounded-2xl p-5 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50/40 transition-all"
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const f = e.dataTransfer.files[0];
+          if (f) handleFile(f);
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+        />
+        <div className="w-12 h-12 bg-primary-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+          <ScanLine className="w-6 h-6 text-primary-600" />
+        </div>
+        <p className="text-sm font-bold text-slate-700">Upload foto KTP untuk isi otomatis</p>
+        <p className="text-xs text-slate-400 mt-1">JPG / PNG — foto harus jelas dan tidak buram</p>
+        <p className="text-[10px] text-primary-500 font-bold mt-2 uppercase tracking-wider">
+          ⚡ AI scan — form terisi otomatis
+        </p>
+      </div>
+    );
+  }
+
+  if (status === "scanning") {
+    return (
+      <div className="border-2 border-primary-200 rounded-2xl p-5 bg-primary-50/30 space-y-3">
+        {previewUrl && (
+          <img
+            src={previewUrl}
+            alt="KTP preview"
+            className="w-full max-h-36 object-cover rounded-xl border border-primary-100"
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-4 h-4 text-primary-600 animate-spin" />
+          <p className="text-sm font-bold text-primary-700">{progressMsg}</p>
+        </div>
+        <div className="w-full bg-primary-100 rounded-full h-2 overflow-hidden">
+          <div
+            className="bg-primary-600 h-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="border-2 border-red-200 rounded-2xl p-4 bg-red-50 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-bold text-red-700">Gagal membaca KTP</p>
+          <p className="text-xs text-red-500 mt-0.5">Gunakan foto lebih jelas, atau isi form manual.</p>
+        </div>
+        <button onClick={reset} className="text-red-400 hover:text-red-600">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
+  // done
+  return (
+    <div className="border-2 border-emerald-200 rounded-2xl p-4 bg-emerald-50/40 space-y-2">
+      {previewUrl && (
+        <img
+          src={previewUrl}
+          alt="KTP"
+          className="w-full max-h-28 object-cover rounded-xl border border-emerald-100"
+        />
+      )}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 text-emerald-600" />
+          <div>
+            <p className="text-sm font-bold text-emerald-800">KTP berhasil dibaca!</p>
+            <p className="text-xs text-emerald-600">{filledCount} field terisi otomatis</p>
+          </div>
+        </div>
+        <button
+          onClick={reset}
+          title="Scan ulang"
+          className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-lg"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <p className="text-[10px] text-slate-400">
+        Periksa dan koreksi data di form jika ada yang kurang tepat.
+      </p>
+    </div>
+  );
+}
 
 // ── Schemas per step ──────────────────────────────────────────────────────────
 
@@ -52,9 +300,7 @@ const akademikSchema = z.object({
   fakultas: z.string().min(2, "Nama fakultas wajib diisi"),
   jurusan: z.string().min(2, "Nama jurusan wajib diisi"),
   semester: z.coerce.number().min(1).max(14),
-  ipk: z
-    .string()
-    .regex(/^\d(\.\d{1,2})?$/, "IPK tidak valid (contoh: 3.5)"),
+  ipk: z.string().regex(/^\d(\.\d{1,2})?$/, "IPK tidak valid (contoh: 3.5)"),
 });
 
 const kontakSchema = z.object({
@@ -62,9 +308,7 @@ const kontakSchema = z.object({
   noHp: z.string().min(10, "No HP tidak valid").max(15),
   alamatAsal: z.string().min(10, "Alamat terlalu pendek"),
   kabupatenAsal: z.string().min(2, "Kabupaten wajib diisi"),
-  alasanMasukAsrama: z
-    .string()
-    .min(30, "Alasan minimal 30 karakter"),
+  alasanMasukAsrama: z.string().min(30, "Alasan minimal 30 karakter"),
   preferensiKamar: z.enum(["putra", "putri"], {
     required_error: "Pilih preferensi kamar",
   }),
@@ -103,6 +347,8 @@ const STEPS = [
   { num: 5, label: "Akun", icon: Lock },
 ];
 
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function DaftarPage() {
   const router = useRouter();
   const { success, error } = useToast();
@@ -110,7 +356,6 @@ export default function DaftarPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Collected data across steps
   const [biodata, setBiodata] = useState<BiodataData | null>(null);
   const [akademik, setAkademik] = useState<AkademikData | null>(null);
   const [kontak, setKontak] = useState<KontakData | null>(null);
@@ -138,41 +383,34 @@ export default function DaftarPage() {
     defaultValues: kontakDarurat ?? {},
   });
 
-  const akunForm = useForm<AkunData>({
-    resolver: zodResolver(akunSchema),
-  });
+  const akunForm = useForm<AkunData>({ resolver: zodResolver(akunSchema) });
+
+  // ── KTP auto-fill ──────────────────────────────────────────────────────────
+
+  const handleKTPResult = (data: KTPData) => {
+    if (data.namaLengkap) biodataForm.setValue("namaLengkap", data.namaLengkap, { shouldValidate: true });
+    if (data.nik) biodataForm.setValue("nik", data.nik, { shouldValidate: true });
+    if (data.tempatLahir) biodataForm.setValue("tempatLahir", data.tempatLahir, { shouldValidate: true });
+    if (data.tanggalLahir) biodataForm.setValue("tanggalLahir", data.tanggalLahir, { shouldValidate: true });
+    if (data.jenisKelamin) biodataForm.setValue("jenisKelamin", data.jenisKelamin, { shouldValidate: true });
+    if (data.agama) biodataForm.setValue("agama", data.agama, { shouldValidate: true });
+    // alamat dari KTP ke step 3
+    if (data.alamatAsal) kontakForm.setValue("alamatAsal", data.alamatAsal, { shouldValidate: false });
+    if (data.kabupatenAsal) kontakForm.setValue("kabupatenAsal", data.kabupatenAsal, { shouldValidate: false });
+  };
 
   // ── Step handlers ──────────────────────────────────────────────────────────
 
-  const onBiodata = (data: BiodataData) => {
-    setBiodata(data);
-    setStep(2);
-  };
-
-  const onAkademik = (data: AkademikData) => {
-    setAkademik(data);
-    setStep(3);
-  };
-
-  const onKontak = (data: KontakData) => {
-    setKontak(data);
-    setStep(4);
-  };
-
-  const onKontakDarurat = (data: KontakDaruratData) => {
-    setKontakDarurat(data);
-    setStep(5);
-  };
+  const onBiodata = (data: BiodataData) => { setBiodata(data); setStep(2); };
+  const onAkademik = (data: AkademikData) => { setAkademik(data); setStep(3); };
+  const onKontak = (data: KontakData) => { setKontak(data); setStep(4); };
+  const onKontakDarurat = (data: KontakDaruratData) => { setKontakDarurat(data); setStep(5); };
 
   const onAkun = async (data: AkunData) => {
     if (!biodata || !akademik || !kontak || !kontakDarurat) return;
     setSubmitting(true);
     try {
-      const cred = await createUserWithEmailAndPassword(
-        auth,
-        kontak.email,
-        data.password
-      );
+      const cred = await createUserWithEmailAndPassword(auth, kontak.email, data.password);
       await updateProfile(cred.user, { displayName: biodata.namaLengkap });
 
       const now = Timestamp.now();
@@ -189,7 +427,6 @@ export default function DaftarPage() {
       await createPendaftaran({
         userId: cred.user.uid,
         status: "submitted",
-        // Biodata
         namaLengkap: biodata.namaLengkap,
         nik: biodata.nik,
         tempatLahir: biodata.tempatLahir,
@@ -197,21 +434,18 @@ export default function DaftarPage() {
         jenisKelamin: biodata.jenisKelamin,
         agama: biodata.agama,
         golonganDarah: biodata.golonganDarah,
-        // Kontak
         email: kontak.email,
         noHp: kontak.noHp,
         alamatAsal: kontak.alamatAsal,
         kabupatenAsal: kontak.kabupatenAsal,
         alasanMasukAsrama: kontak.alasanMasukAsrama,
         preferensiKamar: kontak.preferensiKamar,
-        // Akademik
         nim: akademik.nim,
         universitas: akademik.universitas,
         fakultas: akademik.fakultas,
         jurusan: akademik.jurusan,
         semester: akademik.semester,
         ipk: akademik.ipk,
-        // Kontak darurat
         namaOrtu: kontakDarurat.namaOrtu,
         hubunganOrtu: kontakDarurat.hubunganOrtu,
         noHpOrtu: kontakDarurat.noHpOrtu,
@@ -246,49 +480,36 @@ export default function DaftarPage() {
             <CheckCircle className="w-12 h-12 text-white" />
           </div>
           <div className="space-y-3">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-              Pendaftaran Terkirim!
-            </h1>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Pendaftaran Terkirim!</h1>
             <p className="text-slate-500 font-medium leading-relaxed">
-              Data Anda berhasil dikirim dan sedang menunggu seleksi oleh admin.
-              Anda akan dihubungi melalui email{" "}
-              <span className="font-bold text-primary-600">{kontak?.email}</span>{" "}
-              apabila pendaftaran diterima.
+              Data Anda sedang menunggu seleksi admin. Anda akan dihubungi melalui email{" "}
+              <span className="font-bold text-primary-600">{kontak?.email}</span> apabila diterima.
             </p>
           </div>
 
           <div className="bg-amber-50 border border-amber-100 rounded-2xl p-6 text-left space-y-3">
-            <p className="text-xs font-black text-amber-700 uppercase tracking-widest">
-              Langkah Selanjutnya
-            </p>
+            <p className="text-xs font-black text-amber-700 uppercase tracking-widest">Langkah Selanjutnya</p>
             <ul className="space-y-2 text-sm text-amber-800 font-medium">
               <li className="flex items-start gap-2">
                 <span className="mt-1 w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
-                Admin akan meninjau pendaftaran Anda dan mengecek ketersediaan kamar.
+                Admin akan meninjau pendaftaran dan ketersediaan kamar.
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1 w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
-                Jika diterima, Anda akan mendapat notifikasi email dari kami.
+                Jika diterima, notifikasi akan dikirim ke Gmail Anda.
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1 w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
-                Setelah diterima, login menggunakan email dan password yang sudah Anda buat.
+                Setelah diterima, login dengan email & password yang sudah Anda buat.
               </li>
             </ul>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-2">
-            <Button
-              onClick={() => router.push("/login")}
-              className="px-8 py-4 rounded-2xl font-bold"
-            >
+            <Button onClick={() => router.push("/login")} className="px-8 py-4 rounded-2xl font-bold">
               Masuk ke Akun <ArrowRight className="w-4 h-4 ml-2 inline" />
             </Button>
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/")}
-              className="px-8 py-4 rounded-2xl font-bold"
-            >
+            <Button variant="ghost" onClick={() => router.push("/")} className="px-8 py-4 rounded-2xl font-bold">
               Kembali ke Beranda
             </Button>
           </div>
@@ -304,28 +525,24 @@ export default function DaftarPage() {
       {STEPS.map((s, i) => {
         const Icon = s.icon;
         const active = step === s.num;
-        const done = step > s.num;
+        const isDone = step > s.num;
         return (
           <React.Fragment key={s.num}>
             <div className="flex flex-col items-center gap-1.5">
               <div
                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                  done
+                  isDone
                     ? "bg-green-500 text-white"
                     : active
                     ? "bg-primary-600 text-white shadow-lg"
                     : "bg-slate-100 text-slate-400"
                 }`}
               >
-                {done ? (
-                  <CheckCircle className="w-5 h-5" />
-                ) : (
-                  <Icon className="w-5 h-5" />
-                )}
+                {isDone ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
               </div>
               <span
                 className={`text-[9px] font-black uppercase tracking-widest hidden sm:block ${
-                  active ? "text-primary-600" : done ? "text-green-600" : "text-slate-400"
+                  active ? "text-primary-600" : isDone ? "text-green-600" : "text-slate-400"
                 }`}
               >
                 {s.label}
@@ -344,11 +561,10 @@ export default function DaftarPage() {
     </div>
   );
 
-  // ── Layout shell ───────────────────────────────────────────────────────────
+  // ── Layout ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top nav */}
       <nav className="bg-white border-b border-slate-100 px-6 h-16 flex items-center justify-between sticky top-0 z-10">
         <Link href="/" className="flex items-center gap-3">
           <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center">
@@ -358,23 +574,18 @@ export default function DaftarPage() {
             Asrama Mahasiswa Jambi
           </span>
         </Link>
-        <Link
-          href="/login"
-          className="text-sm font-bold text-slate-500 hover:text-primary-600 transition-colors"
-        >
-          Sudah punya akun? <span className="text-primary-600">Masuk</span>
+        <Link href="/login" className="text-sm font-bold text-slate-500 hover:text-primary-600 transition-colors">
+          Sudah punya akun?{" "}
+          <span className="text-primary-600">Masuk</span>
         </Link>
       </nav>
 
       <div className="flex-1 flex items-start justify-center p-4 py-10">
         <div className="w-full max-w-2xl">
-          {/* Header */}
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-              Formulir Pendaftaran Asrama
-            </h1>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Formulir Pendaftaran Asrama</h1>
             <p className="text-slate-500 font-medium mt-2">
-              Isi data dengan lengkap dan benar. Admin akan meninjau dan menghubungi Anda.
+              Isi data dengan lengkap dan benar. Admin akan meninjau dan menghubungi Anda via email.
             </p>
           </div>
 
@@ -385,6 +596,15 @@ export default function DaftarPage() {
             {step === 1 && (
               <form onSubmit={biodataForm.handleSubmit(onBiodata)} className="space-y-5">
                 <SectionTitle icon={User} title="Biodata Pribadi" />
+
+                {/* KTP Scanner */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest">
+                    Scan KTP (Opsional — Isi Otomatis)
+                  </label>
+                  <KTPScannerPublic onResult={handleKTPResult} />
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div className="sm:col-span-2">
                     <Input
@@ -493,7 +713,7 @@ export default function DaftarPage() {
                     )}
                   </div>
                 </div>
-                <NavButtons step={step} onBack={() => {}} isFirst loading={false} />
+                <NavButtons onBack={() => {}} isFirst loading={false} />
               </form>
             )}
 
@@ -559,7 +779,7 @@ export default function DaftarPage() {
                     {...akademikForm.register("ipk")}
                   />
                 </div>
-                <NavButtons step={step} onBack={() => setStep(1)} loading={false} />
+                <NavButtons onBack={() => setStep(1)} loading={false} />
               </form>
             )}
 
@@ -654,7 +874,7 @@ export default function DaftarPage() {
                     )}
                   </div>
                 </div>
-                <NavButtons step={step} onBack={() => setStep(2)} loading={false} />
+                <NavButtons onBack={() => setStep(2)} loading={false} />
               </form>
             )}
 
@@ -694,7 +914,7 @@ export default function DaftarPage() {
                     {...kontakDaruratForm.register("noHpOrtu")}
                   />
                 </div>
-                <NavButtons step={step} onBack={() => setStep(3)} loading={false} />
+                <NavButtons onBack={() => setStep(3)} loading={false} />
               </form>
             )}
 
@@ -705,12 +925,10 @@ export default function DaftarPage() {
                 <div className="bg-primary-50 border border-primary-100 rounded-2xl p-4 flex gap-3">
                   <Mail className="w-5 h-5 text-primary-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs font-black text-primary-700 uppercase tracking-widest">
-                      Email Akun
-                    </p>
+                    <p className="text-xs font-black text-primary-700 uppercase tracking-widest">Email Akun</p>
                     <p className="text-sm font-bold text-primary-800 mt-0.5">{kontak?.email}</p>
                     <p className="text-xs text-primary-600 mt-1">
-                      Gunakan email ini untuk login setelah diterima.
+                      Gunakan email ini untuk login setelah diterima admin.
                     </p>
                   </div>
                 </div>
@@ -736,9 +954,7 @@ export default function DaftarPage() {
                 </div>
 
                 <div className="bg-slate-50 rounded-2xl p-5 space-y-2">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                    Ringkasan Pendaftaran
-                  </p>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ringkasan</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-600 font-medium">
                     <span className="text-slate-400">Nama</span>
                     <span className="font-bold">{biodata?.namaLengkap}</span>
@@ -751,7 +967,7 @@ export default function DaftarPage() {
                   </div>
                 </div>
 
-                <NavButtons step={step} onBack={() => setStep(4)} loading={submitting} isLast />
+                <NavButtons onBack={() => setStep(4)} loading={submitting} isLast />
               </form>
             )}
           </div>
@@ -783,13 +999,11 @@ function SectionTitle({ icon: Icon, title }: { icon: React.ElementType; title: s
 }
 
 function NavButtons({
-  step,
   onBack,
   isFirst,
   isLast,
   loading,
 }: {
-  step: number;
   onBack: () => void;
   isFirst?: boolean;
   isLast?: boolean;
