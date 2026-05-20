@@ -34,7 +34,7 @@ export function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
     draft: "bg-slate-100 text-slate-600",
     submitted: "bg-amber-50 text-amber-600 border border-amber-100",
-    diverifikasi: "bg-indigo-50 text-indigo-600 border border-indigo-100",
+    diverifikasi: "bg-sky-50 text-sky-600 border border-sky-100",
     diterima: "bg-primary-50 text-primary-600 border border-primary-100",
     ditolak: "bg-rose-50 text-rose-600 border border-rose-100",
   };

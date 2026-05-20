@@ -77,10 +77,10 @@ export default function MahasiswaDashboard() {
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {[
-          { href: "/mahasiswa/pendaftaran", icon: FileText, label: "Form Pendaftaran", color: "bg-indigo-50 text-indigo-600" },
+          { href: "/mahasiswa/pendaftaran", icon: FileText, label: "Form Pendaftaran", color: "bg-rose-50 text-rose-600" },
           { href: "/mahasiswa/status", icon: CheckCircle, label: "Status Pendaftaran", color: "bg-primary-50 text-primary-600" },
           { href: "/mahasiswa/notifikasi", icon: Bell, label: "Pusat Notifikasi", color: "bg-amber-50 text-amber-600" },
-          { href: "/mahasiswa/profil", icon: User, label: "Profil Saya", color: "bg-violet-50 text-violet-600" },
+          { href: "/mahasiswa/profil", icon: User, label: "Profil Saya", color: "bg-sky-50 text-sky-600" },
         ].map((item) => {
           const Icon = item.icon;
           return (

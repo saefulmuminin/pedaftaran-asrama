@@ -178,7 +178,7 @@ export default function NotifikasiAdminPage() {
 
               <div className="space-y-6">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                  <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center text-sky-600">
                     <Info className="w-4 h-4" />
                   </div>
                   <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Konten Pesan</h3>

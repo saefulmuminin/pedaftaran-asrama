@@ -1,19 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User, Mail, Phone, Shield, Save, Key, ShieldCheck, Calendar, BadgeCheck } from "lucide-react";
+import { User, Mail, Shield, Save, Key, ShieldCheck, Calendar, BadgeCheck, Camera, Loader2, Trash2 } from "lucide-react";
 import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { updateUserProfile } from "@/lib/firestore";
+import { uploadProfilePhoto, deleteFile } from "@/lib/storage";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 
 const profileSchema = z.object({
   displayName: z.string().min(3, "Nama minimal 3 karakter"),
@@ -30,10 +31,63 @@ type ProfileForm = z.infer<typeof profileSchema>;
 type PasswordForm = z.infer<typeof passwordSchema>;
 
 export default function AdminProfilPage() {
-  const { userProfile, refreshProfile } = useAuth();
+  const { user, userProfile, refreshProfile } = useAuth();
   const { success, error } = useToast();
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const currentUid = userProfile?.uid ?? user?.uid;
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userProfile || !currentUid) return;
+    if (!file.type.startsWith("image/")) {
+      error("File harus berupa gambar.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      error("Ukuran foto maksimal 2MB.");
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadProfilePhoto(file, currentUid, userProfile.photoURL);
+      await updateUserProfile(currentUid, { photoURL: url });
+      await refreshProfile();
+      success("Foto profil berhasil diperbarui!");
+    } catch (err) {
+      console.error("Upload foto gagal:", err);
+      error("Gagal mengunggah foto.");
+    } finally {
+      setUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const handlePhotoRemove = async () => {
+    if (!userProfile || !currentUid) return;
+    setUploadingPhoto(true);
+    try {
+      const oldUrl = userProfile.photoURL;
+      await updateUserProfile(currentUid, { photoURL: "" });
+      if (oldUrl) {
+        try {
+          await deleteFile(oldUrl);
+        } catch (err) {
+          console.warn("Gagal menghapus file foto profil:", err);
+        }
+      }
+      await refreshProfile();
+      success("Foto profil dihapus.");
+    } catch (err) {
+      console.error("Hapus foto gagal:", err);
+      error("Gagal menghapus foto.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const profileForm = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -43,13 +97,14 @@ export default function AdminProfilPage() {
   const passwordForm = useForm<PasswordForm>({ resolver: zodResolver(passwordSchema) });
 
   const onSaveProfile = async (data: ProfileForm) => {
-    if (!userProfile) return;
+    if (!userProfile || !currentUid) return;
     setSavingProfile(true);
     try {
-      await updateUserProfile(userProfile.uid, data);
+      await updateUserProfile(currentUid, data);
       await refreshProfile();
       success("Profil berhasil diperbarui!");
-    } catch {
+    } catch (err) {
+      console.error("Update profil gagal:", err);
       error("Gagal memperbarui profil.");
     } finally {
       setSavingProfile(false);
@@ -102,17 +157,50 @@ export default function AdminProfilPage() {
             
             <div className="flex flex-col items-center text-center space-y-6 relative z-10">
               <div className="relative">
-                <div className="w-32 h-32 bg-primary-50 rounded-[2.5rem] flex items-center justify-center shadow-inner border border-primary-100 group-hover:bg-primary-600 group-hover:text-white transition-all duration-700 group-hover:rotate-6">
-                  <User className="w-16 h-16" />
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                />
+                <div className="w-32 h-32 bg-primary-50 rounded-[2.5rem] flex items-center justify-center shadow-inner border border-primary-100 overflow-hidden text-primary-600">
+                  {userProfile?.photoURL ? (
+                    <img
+                      src={userProfile.photoURL}
+                      alt={userProfile.displayName ?? "Foto profil"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-16 h-16" />
+                  )}
                 </div>
-                <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-lg border border-slate-50 text-emerald-500">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={uploadingPhoto}
+                  className="absolute -bottom-2 -right-2 w-10 h-10 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 rounded-2xl flex items-center justify-center shadow-lg border-2 border-white text-white transition-all"
+                  aria-label="Ubah foto profil"
+                >
+                  {uploadingPhoto ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+                </button>
               </div>
+
+              {userProfile?.photoURL && !uploadingPhoto && (
+                <button
+                  type="button"
+                  onClick={handlePhotoRemove}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-500 hover:text-rose-700 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Hapus Foto
+                </button>
+              )}
 
               <div className="space-y-2">
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">{userProfile?.displayName}</h2>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-100 text-primary-700 rounded-full border border-primary-200">
+                  <ShieldCheck className="w-3 h-3" />
                   <span className="text-[10px] font-black uppercase tracking-widest">Main Administrator</span>
                 </div>
               </div>
@@ -153,7 +241,7 @@ export default function AdminProfilPage() {
             {/* Personal Info */}
             <Card className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem] flex flex-col">
               <div className="flex items-center gap-4 mb-8 pb-4 border-b border-slate-50">
-                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
+                <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600 shadow-sm">
                   <User className="w-5 h-5" />
                 </div>
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Detail Informasi</h3>
@@ -186,7 +274,7 @@ export default function AdminProfilPage() {
             {/* Security */}
             <Card className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem]">
               <div className="flex items-center gap-4 mb-8 pb-4 border-b border-slate-50">
-                <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center text-violet-600 shadow-sm">
+                <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 shadow-sm">
                   <Key className="w-5 h-5" />
                 </div>
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Keamanan Akun</h3>

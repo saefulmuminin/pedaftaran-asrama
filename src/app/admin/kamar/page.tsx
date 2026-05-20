@@ -1,17 +1,18 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Plus, Edit2, Trash2, DoorOpen, Users, Info, Settings, LayoutGrid } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Edit2, Trash2, DoorOpen, Users, Info, Settings, LayoutGrid, Calendar, Phone } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
-import { getAllKamar, createKamar, updateKamar, deleteKamar } from "@/lib/firestore";
+import { getAllKamar, createKamar, updateKamar, deleteKamar, getAllPenghuni } from "@/lib/firestore";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Select } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { cn } from "@/lib/utils";
-import type { Kamar, StatusKamar } from "@/types";
+import { cn, formatDate } from "@/lib/utils";
+import type { Kamar, StatusKamar, Penghuni } from "@/types";
 
 const fasilitasOptions = ["AC", "Lemari", "Meja Belajar", "Kamar Mandi Dalam", "Kipas Angin", "Dispenser"];
 const statusOpts = [
@@ -28,17 +29,29 @@ const defaultForm = {
 export default function KamarPage() {
   const { success, error } = useToast();
   const [kamarList, setKamarList] = useState<Kamar[]>([]);
+  const [penghuniList, setPenghuniList] = useState<Penghuni[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState<Kamar | null>(null);
   const [editing, setEditing] = useState<Kamar | null>(null);
+  const router = useRouter();
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    const data = await getAllKamar();
-    setKamarList(data);
-    setLoading(false);
+    try {
+      const [kData, pData] = await Promise.all([
+        getAllKamar(),
+        getAllPenghuni(),
+      ]);
+      setKamarList(kData);
+      setPenghuniList(pData);
+    } catch (err) {
+      console.error("Gagal memuat data:", err);
+      error("Gagal memuat data kamar dan penghuni.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -159,83 +172,119 @@ export default function KamarPage() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {kamarList.map((k) => (
-              <Card key={k.id} className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem] flex flex-col group hover:shadow-xl transition-all duration-500">
-                <div className="flex items-start justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-primary-50 rounded-[1.2rem] flex items-center justify-center text-primary-600 group-hover:bg-primary-600 group-hover:text-white transition-all duration-500">
-                      <DoorOpen className="w-7 h-7" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black text-slate-900 tracking-tight leading-tight">KAMAR {k.nomorKamar}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lantai {k.lantai}</span>
-                        <span className="w-1 h-1 bg-slate-200 rounded-full" />
-                        <span className={cn("text-[10px] font-black uppercase tracking-widest", k.jenisKelamin === "L" ? "text-indigo-500" : "text-pink-500")}>
-                          {k.jenisKelamin === "L" ? "Putra" : "Putri"}
-                        </span>
+            {kamarList.map((k) => {
+              const kPenghuni = penghuniList.filter(
+                (p) => p.nomorKamar === k.nomorKamar || p.kamarId === k.id
+              );
+              
+              return (
+                <Card key={k.id} className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem] flex flex-col group hover:shadow-xl transition-all duration-500">
+                  <div className="flex items-start justify-between mb-8">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-primary-50 rounded-[1.2rem] flex items-center justify-center text-primary-600 group-hover:bg-primary-600 group-hover:text-white transition-all duration-500">
+                        <DoorOpen className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight leading-tight">KAMAR {k.nomorKamar}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lantai {k.lantai}</span>
+                          <span className="w-1 h-1 bg-slate-200 rounded-full" />
+                          <span className={cn("text-[10px] font-black uppercase tracking-widest", k.jenisKelamin === "L" ? "text-blue-500" : "text-pink-500")}>
+                            {k.jenisKelamin === "L" ? "Putra" : "Putri"}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    <Badge kamarStatus={k.status} className="scale-110" />
                   </div>
-                  <Badge kamarStatus={k.status} className="scale-110" />
-                </div>
 
-                {/* Progress bar */}
-                <div className="space-y-3 mb-8">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs font-black text-slate-600 uppercase tracking-tight">{k.terisi} / {k.kapasitas} Penghuni</span>
+                  {/* Progress bar */}
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-slate-400" />
+                        <span className="text-xs font-black text-slate-600 uppercase tracking-tight">{k.terisi} / {k.kapasitas} Penghuni</span>
+                      </div>
+                      <span className="text-xs font-black text-slate-900">{Math.round((k.terisi / k.kapasitas) * 100)}%</span>
                     </div>
-                    <span className="text-xs font-black text-slate-900">{Math.round((k.terisi / k.kapasitas) * 100)}%</span>
+                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-all duration-700 ease-out",
+                          k.terisi >= k.kapasitas ? "bg-red-500" : k.terisi > k.kapasitas / 2 ? "bg-amber-500" : "bg-primary-500"
+                        )}
+                        style={{ width: `${Math.min((k.terisi / k.kapasitas) * 100, 100)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-700 ease-out",
-                        k.terisi >= k.kapasitas ? "bg-red-500" : k.terisi > k.kapasitas / 2 ? "bg-amber-500" : "bg-primary-500"
-                      )}
-                      style={{ width: `${Math.min((k.terisi / k.kapasitas) * 100, 100)}%` }}
-                    />
+
+                  {/* Penghuni Mini List */}
+                  <div className="mb-6 p-4 bg-slate-50/50 rounded-2xl border border-slate-100/50">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">Penghuni ({kPenghuni.length})</p>
+                    {kPenghuni.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {kPenghuni.map((p) => (
+                          <div 
+                            key={p.id} 
+                            className="flex items-center gap-1 px-2.5 py-1 bg-white rounded-xl border border-slate-100 shadow-sm"
+                            title={`${p.namaLengkap} - ${p.universitas}`}
+                          >
+                            <span className="text-[11px] font-bold text-slate-700 truncate max-w-[90px]">{p.namaLengkap.split(" ")[0]}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">Belum ada penghuni aktif</p>
+                    )}
                   </div>
-                </div>
 
-                {/* Fasilitas pills */}
-                <div className="flex flex-wrap gap-2 mb-8 flex-1">
-                  {k.fasilitas.length > 0 ? (
-                    k.fasilitas.map((f) => (
-                      <span key={f} className="px-3 py-1.5 bg-slate-50 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-tight border border-slate-100">
-                        {f}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs font-bold text-slate-300 italic">Belum ada fasilitas</span>
-                  )}
-                </div>
+                  {/* Fasilitas pills */}
+                  <div className="flex flex-wrap gap-2 mb-8 flex-1">
+                    {k.fasilitas.length > 0 ? (
+                      k.fasilitas.map((f) => (
+                        <span key={f} className="px-3 py-1.5 bg-slate-50 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-tight border border-slate-100">
+                          {f}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs font-bold text-slate-300 italic">Belum ada fasilitas</span>
+                    )}
+                  </div>
 
-                <div className="flex gap-3 pt-6 border-t border-slate-50">
-                  <Button 
-                    variant="ghost" 
-                    icon={<Edit2 className="w-4 h-4" />} 
-                    onClick={() => openEdit(k)} 
-                    className="flex-1 rounded-2xl font-bold bg-slate-50 hover:bg-primary-50 hover:text-primary-600"
-                  >
-                    Edit
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    icon={<Trash2 className="w-4 h-4" />} 
-                    onClick={() => setDeleteModal(k)} 
-                    className="flex-1 rounded-2xl font-bold bg-slate-50 hover:bg-red-50 hover:text-red-600"
-                  >
-                    Hapus
-                  </Button>
-                </div>
-              </Card>
-            ))}
+                  <div className="flex gap-2 pt-6 border-t border-slate-100/80">
+                    <Button 
+                      variant="ghost" 
+                      icon={<Info className="w-3.5 h-3.5" />} 
+                      onClick={() => router.push(`/admin/kamar/${k.id}`)} 
+                      className="flex-1 rounded-xl font-extrabold text-xs bg-slate-50 hover:bg-sky-50 hover:text-sky-600 px-2 py-2"
+                    >
+                      Detail
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      icon={<Edit2 className="w-3.5 h-3.5" />} 
+                      onClick={() => openEdit(k)} 
+                      className="flex-1 rounded-xl font-extrabold text-xs bg-slate-50 hover:bg-primary-50 hover:text-primary-600 px-2 py-2"
+                    >
+                      Edit
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      icon={<Trash2 className="w-3.5 h-3.5" />} 
+                      onClick={() => setDeleteModal(k)} 
+                      className="flex-1 rounded-xl font-extrabold text-xs bg-slate-50 hover:bg-red-50 hover:text-red-600 px-2 py-2"
+                    >
+                      Hapus
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
+
+
 
       {/* Create/Edit Modal */}
       <Modal open={modal} onClose={() => setModal(false)} title={editing ? "Update Informasi Kamar" : "Pendaftaran Kamar Baru"} size="lg">

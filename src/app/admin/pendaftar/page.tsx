@@ -3,13 +3,17 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Search, Filter, Eye, Download } from "lucide-react";
-import { getAllPendaftaran } from "@/lib/firestore";
+import { Search, Filter, Eye, Download, Trash2, AlertTriangle, FileJson } from "lucide-react";
+import { getAllPendaftaran, deleteAllPendaftaran } from "@/lib/firestore";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
 import { formatDateTime, cn } from "@/lib/utils";
 import type { Pendaftaran } from "@/types";
+
+const CONFIRM_PHRASE = "HAPUS SEMUA";
 
 const statusOpts: { value: string; label: string }[] = [
   { value: "semua", label: "Semua Status" },
@@ -29,6 +33,10 @@ export default function PendaftarPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(initialStatus);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmInput, setConfirmInput] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const { success, error } = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +80,38 @@ export default function PendaftarPage() {
     a.click();
   };
 
+  const downloadBackup = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      count: data.length,
+      pendaftaran: data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup_pendaftaran_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDeleteAll = async () => {
+    if (confirmInput !== CONFIRM_PHRASE) return;
+    setDeleting(true);
+    try {
+      const count = await deleteAllPendaftaran();
+      success(`${count} data pendaftar berhasil dihapus.`);
+      setConfirmOpen(false);
+      setConfirmInput("");
+      await load();
+    } catch (err) {
+      console.error("Gagal menghapus data pendaftar:", err);
+      error("Gagal menghapus data pendaftar.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-bottom duration-700 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -81,9 +121,19 @@ export default function PendaftarPage() {
             Ditemukan <span className="text-primary-600 font-bold">{filtered.length}</span> pendaftar dari total sistem
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button variant="outline" size="md" className="rounded-2xl font-bold bg-white shadow-sm border-slate-200" icon={<Download className="w-5 h-5" />} onClick={exportCSV}>
             Export Data
+          </Button>
+          <Button
+            variant="outline"
+            size="md"
+            className="rounded-2xl font-bold bg-white shadow-sm border-rose-200 text-rose-600 hover:bg-rose-50"
+            icon={<Trash2 className="w-5 h-5" />}
+            onClick={() => setConfirmOpen(true)}
+            disabled={data.length === 0}
+          >
+            Hapus Semua
           </Button>
         </div>
       </div>
@@ -220,6 +270,78 @@ export default function PendaftarPage() {
           </div>
         )}
       </Card>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => {
+          if (deleting) return;
+          setConfirmOpen(false);
+          setConfirmInput("");
+        }}
+        title="Hapus Semua Data Pendaftar"
+        size="md"
+      >
+        <div className="space-y-6">
+          <div className="flex gap-4 p-5 rounded-2xl bg-rose-50 border border-rose-100">
+            <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+            <div className="space-y-1.5">
+              <p className="font-bold text-rose-900 text-sm">Tindakan ini permanen</p>
+              <p className="text-xs font-medium text-rose-700 leading-relaxed">
+                Akan menghapus <span className="font-black">{data.length}</span> dokumen
+                dari koleksi <code className="bg-rose-100 px-1.5 py-0.5 rounded">pendaftaran</code>.
+                Data tidak bisa dikembalikan kecuali Anda mengunduh backup terlebih dahulu.
+              </p>
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            className="w-full rounded-2xl font-bold border-slate-200"
+            icon={<FileJson className="w-5 h-5" />}
+            onClick={downloadBackup}
+            disabled={data.length === 0}
+          >
+            Unduh Backup JSON
+          </Button>
+
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 uppercase tracking-widest">
+              Ketik <code className="bg-slate-100 px-1.5 py-0.5 rounded text-rose-600">{CONFIRM_PHRASE}</code> untuk konfirmasi
+            </label>
+            <input
+              type="text"
+              value={confirmInput}
+              onChange={(e) => setConfirmInput(e.target.value)}
+              placeholder={CONFIRM_PHRASE}
+              autoComplete="off"
+              className="w-full px-5 py-4 rounded-2xl border-2 border-slate-100 text-sm font-bold text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-rose-300 transition-colors"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-2xl font-bold border-slate-200"
+              onClick={() => {
+                setConfirmOpen(false);
+                setConfirmInput("");
+              }}
+              disabled={deleting}
+            >
+              Batal
+            </Button>
+            <Button
+              className="flex-1 rounded-2xl font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xl shadow-rose-500/20"
+              icon={<Trash2 className="w-5 h-5" />}
+              onClick={handleDeleteAll}
+              loading={deleting}
+              disabled={confirmInput !== CONFIRM_PHRASE || deleting}
+            >
+              Hapus Semua
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -318,7 +318,7 @@ export default function DetailPendaftarPage() {
 
           <Card className="p-8 md:p-10 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem]">
             <div className="flex items-center gap-4 mb-10 pb-6 border-b border-slate-50">
-              <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+              <div className="w-10 h-10 bg-sky-50 rounded-xl flex items-center justify-center text-sky-600">
                 <BookOpen className="w-5 h-5" />
               </div>
               <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">Akademik & Pendidikan</h3>

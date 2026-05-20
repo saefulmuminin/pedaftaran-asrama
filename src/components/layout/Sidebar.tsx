@@ -12,7 +12,6 @@ import {
   DoorOpen,
   Bell,
   X,
-  Building2,
   Home,
   CheckSquare,
 } from "lucide-react";
@@ -65,9 +64,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         {/* Logo */}
         <div className="flex items-center justify-between px-6 h-20 border-b border-slate-50">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-premium">
-              <Building2 className="w-5.5 h-5.5 text-white" />
-            </div>
+            <img src="/logo.png" alt="Asrama Jambi" className="w-10 h-10 object-contain" />
             <div>
               <p className="text-sm font-extrabold text-slate-900 tracking-tight leading-tight">Asrama Jambi</p>
               <p className="text-[10px] text-primary-600 font-bold uppercase tracking-widest">Jakarta</p>

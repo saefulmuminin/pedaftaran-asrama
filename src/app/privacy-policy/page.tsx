@@ -73,7 +73,7 @@ export default function PrivacyPolicyPage() {
 
           <section className="space-y-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm border border-slate-100">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-amber-600 shadow-sm border border-slate-100">
                 <FileText className="w-5 h-5" />
               </div>
               <h3 className="text-xl font-black text-slate-900 tracking-tight">2. Penggunaan Informasi</h3>
@@ -103,7 +103,7 @@ export default function PrivacyPolicyPage() {
 
           <section className="space-y-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-violet-600 shadow-sm border border-slate-100">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-rose-600 shadow-sm border border-slate-100">
                 <Lock className="w-5 h-5" />
               </div>
               <h3 className="text-xl font-black text-slate-900 tracking-tight">3. Keamanan Data</h3>

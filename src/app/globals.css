@@ -1,29 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary-50: #f5f3ff;
-  --color-primary-100: #ede9fe;
-  --color-primary-200: #ddd6fe;
-  --color-primary-300: #c4b5fd;
-  --color-primary-400: #a78bfa;
-  --color-primary-500: #8b5cf6;
-  --color-primary-600: #7c3aed;
-  --color-primary-700: #6d28d9;
-  --color-primary-800: #5b21b6;
-  --color-primary-900: #4c1d95;
-  --color-primary-950: #2e1065;
+  --color-primary-50: #fdf2f2;
+  --color-primary-100: #fde2e4;
+  --color-primary-200: #fbc4c6;
+  --color-primary-300: #f7989c;
+  --color-primary-400: #f26166;
+  --color-primary-500: #e7363c;
+  --color-primary-600: #d40e19;
+  --color-primary-700: #b30b13;
+  --color-primary-800: #92090e;
+  --color-primary-900: #72060a;
+  --color-primary-950: #460305;
 
   --radius-3xl: 1.5rem;
   --radius-4xl: 2rem;
   
-  --shadow-premium: 0 10px 15px -3px rgba(139, 92, 246, 0.1), 0 4px 6px -2px rgba(139, 92, 246, 0.05);
+  --shadow-premium: 0 10px 15px -3px rgba(212, 14, 25, 0.08), 0 4px 6px -2px rgba(212, 14, 25, 0.04);
   --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 :root {
   --background: #ffffff;
   --foreground: #0f172a;
-  --primary: #7c3aed;
+  --primary: #d40e19;
   --primary-foreground: #ffffff;
 }
 
@@ -93,11 +93,11 @@ body {
 
 /* Premium Gradients */
 .bg-gradient-premium {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, #d40e19 0%, #92090e 100%);
 }
 
 .text-gradient-premium {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, #d40e19 0%, #92090e 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -111,7 +111,7 @@ body {
 }
 
 .hover-glow:hover {
-  box-shadow: 0 0 20px rgba(124, 58, 237, 0.3);
+  box-shadow: 0 0 20px rgba(212, 14, 25, 0.25);
 }
 
 /* Animations */

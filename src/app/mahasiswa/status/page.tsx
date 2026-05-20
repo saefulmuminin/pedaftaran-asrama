@@ -220,7 +220,7 @@ export default function StatusPage() {
 
             <Card className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem]">
               <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-50">
-                <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                <div className="w-8 h-8 bg-sky-50 rounded-lg flex items-center justify-center text-sky-600">
                   <GraduationCap className="w-4 h-4" />
                 </div>
                 <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest">Akademik</h3>
@@ -243,7 +243,7 @@ export default function StatusPage() {
 
           <Card className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem]">
             <div className="flex items-center gap-4 mb-8 pb-4 border-b border-slate-50">
-              <div className="w-8 h-8 bg-violet-50 rounded-lg flex items-center justify-center text-violet-600">
+              <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-600">
                 <FileImage className="w-4 h-4" />
               </div>
               <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest">Berkas Pendaftaran</h3>

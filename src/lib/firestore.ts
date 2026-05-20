@@ -9,10 +9,12 @@ import {
   addDoc,
   query,
   where,
+  writeBatch,
   Timestamp,
   onSnapshot,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { updateProfile as updateAuthProfile } from "firebase/auth";
+import { auth, db } from "./firebase";
 import type {
   UserProfile,
   Pendaftaran,
@@ -25,7 +27,9 @@ import type {
 // --- USER ---
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(doc(db, "users", uid));
-  return snap.exists() ? (snap.data() as UserProfile) : null;
+  if (!snap.exists()) return null;
+  // Inject uid dari path agar selalu tersedia walau dokumen lama tidak punya field uid
+  return { uid, ...snap.data() } as UserProfile;
 }
 
 export async function createUserProfile(profile: UserProfile): Promise<void> {
@@ -36,10 +40,67 @@ export async function updateUserProfile(
   uid: string,
   data: Partial<UserProfile>
 ): Promise<void> {
+  // Primary write — yang ini wajib sukses
   await updateDoc(doc(db, "users", uid), {
     ...data,
     updatedAt: Timestamp.now(),
   });
+
+  // Side effects: Auth sync + cascade ke pendaftaran/penghuni
+  // Dijalankan fire-and-forget agar tidak memblokir/menggagalkan primary update
+  // saat rules menolak salah satu cascade (misal mahasiswa tidak boleh menulis penghuni)
+  syncProfileSideEffects(uid, data).catch((err) => {
+    console.warn("Profile side effect gagal (non-fatal):", err);
+  });
+}
+
+async function syncProfileSideEffects(uid: string, data: Partial<UserProfile>): Promise<void> {
+  // 1. Sync ke Firebase Auth
+  if (auth.currentUser && auth.currentUser.uid === uid) {
+    const authUpdate: { displayName?: string | null; photoURL?: string | null } = {};
+    if (data.displayName !== undefined) authUpdate.displayName = data.displayName || null;
+    if (data.photoURL !== undefined) authUpdate.photoURL = data.photoURL || null;
+    if (Object.keys(authUpdate).length > 0) {
+      try {
+        await updateAuthProfile(auth.currentUser, authUpdate);
+      } catch (err) {
+        console.warn("Auth profile sync gagal:", err);
+      }
+    }
+  }
+
+  // 2. Cascade field overlap ke pendaftaran & penghuni
+  const cascade: { namaLengkap?: string; noHp?: string } = {};
+  if (data.displayName !== undefined) cascade.namaLengkap = data.displayName;
+  if (data.noHp !== undefined) cascade.noHp = data.noHp;
+  if (Object.keys(cascade).length === 0) return;
+
+  try {
+    const pendaftaran = await getPendaftaranByUser(uid);
+    if (pendaftaran) {
+      await updateDoc(doc(db, "pendaftaran", pendaftaran.id), {
+        ...cascade,
+        updatedAt: Timestamp.now(),
+      });
+    }
+  } catch (err) {
+    console.warn("Cascade ke pendaftaran gagal:", err);
+  }
+
+  try {
+    const penghuniSnap = await getDocs(
+      query(collection(db, "penghuni"), where("userId", "==", uid))
+    );
+    await Promise.all(
+      penghuniSnap.docs.map((d) =>
+        updateDoc(doc(db, "penghuni", d.id), cascade).catch((err) => {
+          console.warn("Cascade ke penghuni gagal:", err);
+        })
+      )
+    );
+  } catch (err) {
+    console.warn("Query penghuni gagal:", err);
+  }
 }
 
 // --- PENDAFTARAN ---
@@ -73,6 +134,22 @@ export async function createPendaftaran(
 ): Promise<string> {
   const ref = await addDoc(collection(db, "pendaftaran"), data);
   return ref.id;
+}
+
+export async function deleteAllPendaftaran(): Promise<number> {
+  const snap = await getDocs(collection(db, "pendaftaran"));
+  if (snap.empty) return 0;
+
+  // Firestore batch limit: 500 ops per batch
+  const docs = snap.docs;
+  let deleted = 0;
+  for (let i = 0; i < docs.length; i += 500) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + 500).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += Math.min(500, docs.length - i);
+  }
+  return deleted;
 }
 
 export async function updatePendaftaran(

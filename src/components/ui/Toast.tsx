@@ -44,14 +44,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: <CheckCircle className="w-5 h-5 text-primary-600" />,
     error: <XCircle className="w-5 h-5 text-rose-600" />,
     warning: <AlertCircle className="w-5 h-5 text-amber-600" />,
-    info: <Info className="w-5 h-5 text-indigo-600" />,
+    info: <Info className="w-5 h-5 text-sky-600" />,
   };
 
   const styles = {
     success: "border-primary-100 bg-white/90 glass",
     error: "border-rose-100 bg-white/90 glass",
     warning: "border-amber-100 bg-white/90 glass",
-    info: "border-indigo-100 bg-white/90 glass",
+    info: "border-sky-100 bg-white/90 glass",
   };
 
   return (

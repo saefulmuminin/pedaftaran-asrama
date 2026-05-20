@@ -7,7 +7,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
-  Building2,
   User,
   BookOpen,
   MapPin,
@@ -567,9 +566,7 @@ export default function DaftarPage() {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <nav className="bg-white border-b border-slate-100 px-6 h-16 flex items-center justify-between sticky top-0 z-10">
         <Link href="/" className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-white" />
-          </div>
+          <img src="/logo.png" alt="Asrama Mahasiswa Jambi" className="w-10 h-10 object-contain" />
           <span className="font-extrabold text-slate-900 tracking-tight text-sm">
             Asrama Mahasiswa Jambi
           </span>
