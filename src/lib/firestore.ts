@@ -22,7 +22,16 @@ import type {
   Penghuni,
   Notifikasi,
   DashboardStats,
+  Tagihan,
+  StatusTagihan,
+  Tamu,
+  Kegiatan,
+  KategoriKegiatan,
+  TataTertibItem,
+  KategoriTataTertib,
 } from "@/types";
+
+export const TAGIHAN_BULANAN = 70_000; // Rp 70.000 per bulan per penghuni
 
 // --- USER ---
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -249,6 +258,317 @@ export function subscribeNotifikasi(
       .slice(0, 20);
     callback(sorted);
   });
+}
+
+// --- TAGIHAN ---
+function periodeNow(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function getCurrentPeriode(): string {
+  return periodeNow();
+}
+
+export function formatPeriode(periode: string): string {
+  const [year, month] = periode.split("-");
+  const bulan = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  return `${bulan[parseInt(month, 10)]} ${year}`;
+}
+
+export async function getTagihanByUser(userId: string): Promise<Tagihan[]> {
+  const q = query(collection(db, "tagihan"), where("userId", "==", userId));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Tagihan))
+    .sort((a, b) => b.periode.localeCompare(a.periode));
+}
+
+export async function getAllTagihan(periode?: string): Promise<Tagihan[]> {
+  const snap = await getDocs(collection(db, "tagihan"));
+  let list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Tagihan));
+  if (periode) list = list.filter((t) => t.periode === periode);
+  return list.sort((a, b) => {
+    const byPeriode = b.periode.localeCompare(a.periode);
+    if (byPeriode !== 0) return byPeriode;
+    return a.namaLengkap.localeCompare(b.namaLengkap);
+  });
+}
+
+export async function getTagihanById(id: string): Promise<Tagihan | null> {
+  const snap = await getDoc(doc(db, "tagihan", id));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Tagihan) : null;
+}
+
+export async function updateTagihan(
+  id: string,
+  data: Partial<Omit<Tagihan, "id" | "createdAt">>
+): Promise<void> {
+  await updateDoc(doc(db, "tagihan", id), {
+    ...data,
+    updatedAt: Timestamp.now(),
+  });
+}
+
+export async function setTagihanStatusByOrderId(
+  orderId: string,
+  status: StatusTagihan,
+  extra: Partial<Tagihan> = {}
+): Promise<boolean> {
+  const snap = await getDocs(
+    query(collection(db, "tagihan"), where("midtransOrderId", "==", orderId))
+  );
+  if (snap.empty) return false;
+  const ref = snap.docs[0].ref;
+  await updateDoc(ref, {
+    ...extra,
+    status,
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+export interface GenerateBulkOpts {
+  judul?: string;
+  jumlah?: number;
+  catatan?: string;
+}
+
+/**
+ * Generate tagihan untuk semua penghuni aktif pada periode tertentu.
+ * Dedup: kombinasi (penghuniId, periode, judul) — jadi judul beda di periode sama tetap dibuat.
+ */
+export async function generateTagihanBulkPeriode(
+  periode: string,
+  adminUid: string,
+  opts: GenerateBulkOpts = {}
+): Promise<{ created: number; skipped: number }> {
+  const judul = opts.judul?.trim() || "Iuran Bulanan";
+  const jumlah = opts.jumlah ?? TAGIHAN_BULANAN;
+  const catatan = opts.catatan?.trim();
+
+  const penghuniSnap = await getDocs(
+    query(collection(db, "penghuni"), where("status", "==", "aktif"))
+  );
+  const penghuniList = penghuniSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Penghuni));
+
+  const existingSnap = await getDocs(
+    query(collection(db, "tagihan"), where("periode", "==", periode))
+  );
+  const existingKeys = new Set(
+    existingSnap.docs.map((d) => {
+      const t = d.data() as Tagihan;
+      return `${t.penghuniId}::${t.judul}`;
+    })
+  );
+
+  let created = 0;
+  let skipped = 0;
+  const now = Timestamp.now();
+
+  for (const p of penghuniList) {
+    const key = `${p.id}::${judul}`;
+    if (existingKeys.has(key)) {
+      skipped++;
+      continue;
+    }
+    await addDoc(collection(db, "tagihan"), {
+      penghuniId: p.id,
+      userId: p.userId,
+      namaLengkap: p.namaLengkap,
+      nomorKamar: p.nomorKamar,
+      periode,
+      judul,
+      jumlah,
+      ...(catatan ? { catatan } : {}),
+      status: "unpaid" as StatusTagihan,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: adminUid,
+    });
+    created++;
+  }
+
+  return { created, skipped };
+}
+
+/**
+ * Buat satu tagihan custom untuk satu penghuni — mis. denda atau iuran tambahan.
+ */
+export async function createTagihanCustom(
+  penghuni: Pick<Penghuni, "id" | "userId" | "namaLengkap" | "nomorKamar">,
+  data: {
+    judul: string;
+    jumlah: number;
+    periode: string;
+    catatan?: string;
+  },
+  adminUid: string
+): Promise<string> {
+  const now = Timestamp.now();
+  const ref = await addDoc(collection(db, "tagihan"), {
+    penghuniId: penghuni.id,
+    userId: penghuni.userId,
+    namaLengkap: penghuni.namaLengkap,
+    nomorKamar: penghuni.nomorKamar,
+    periode: data.periode,
+    judul: data.judul,
+    jumlah: data.jumlah,
+    ...(data.catatan ? { catatan: data.catatan } : {}),
+    status: "unpaid" as StatusTagihan,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: adminUid,
+  });
+  return ref.id;
+}
+
+export async function deleteTagihan(id: string): Promise<void> {
+  await deleteDoc(doc(db, "tagihan", id));
+}
+
+// --- TAMU ---
+export async function createTamu(data: Omit<Tamu, "id">): Promise<string> {
+  const ref = await addDoc(collection(db, "tamu"), data);
+  return ref.id;
+}
+
+export async function getAllTamu(): Promise<Tamu[]> {
+  const snap = await getDocs(collection(db, "tamu"));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Tamu))
+    .sort((a, b) => b.waktuKedatangan.seconds - a.waktuKedatangan.seconds);
+}
+
+export async function getTamuByRange(
+  fromTs: Timestamp,
+  toTs: Timestamp
+): Promise<Tamu[]> {
+  const snap = await getDocs(collection(db, "tamu"));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Tamu))
+    .filter((t) =>
+      t.waktuKedatangan.seconds >= fromTs.seconds &&
+      t.waktuKedatangan.seconds <= toTs.seconds
+    )
+    .sort((a, b) => b.waktuKedatangan.seconds - a.waktuKedatangan.seconds);
+}
+
+export async function deleteTamu(id: string): Promise<void> {
+  await deleteDoc(doc(db, "tamu", id));
+}
+
+// --- TATA TERTIB ---
+export async function getAllTataTertib(): Promise<TataTertibItem[]> {
+  const snap = await getDocs(collection(db, "tataTertib"));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as TataTertibItem))
+    .sort((a, b) => {
+      if (a.kategori !== b.kategori) return a.kategori === "kewajiban" ? -1 : 1;
+      return a.urutan - b.urutan;
+    });
+}
+
+export async function createTataTertibItem(
+  data: Omit<TataTertibItem, "id">
+): Promise<string> {
+  const ref = await addDoc(collection(db, "tataTertib"), data);
+  return ref.id;
+}
+
+export async function updateTataTertibItem(
+  id: string,
+  data: Partial<Omit<TataTertibItem, "id" | "createdAt">>
+): Promise<void> {
+  await updateDoc(doc(db, "tataTertib", id), {
+    ...data,
+    updatedAt: Timestamp.now(),
+  });
+}
+
+export async function deleteTataTertibItem(id: string): Promise<void> {
+  await deleteDoc(doc(db, "tataTertib", id));
+}
+
+const DEFAULT_KEWAJIBAN = [
+  "Menjaga nama baik, ketertiban, dan keamanan asrama.",
+  "Menjaga dan memelihara fasilitas serta barang-barang inventaris asrama.",
+  "Melapor segala bentuk kegiatan yang berkaitan dengan asrama kepada pengurus.",
+  "Berpakaian rapi dan pantas di lingkungan asrama.",
+  "Membayar uang bulanan asrama bagi seluruh penghuni sebesar Rp 70.000.",
+  "Menghormati teman-teman yang sedang belajar dan menunaikan ibadah.",
+  "Mengikuti dan melaksanakan kegiatan asrama (kerja bakti, rapat, dan kegiatan lainnya).",
+  "Melaporkan setiap tamu yang datang kepada pengurus asrama.",
+  "Keluar / masuk asrama harap mengunci pagar.",
+];
+
+const DEFAULT_LARANGAN = [
+  "Membawa, mengedarkan, dan mengkonsumsi segala jenis minuman keras, narkotika, serta zat adiktif lainnya di lingkungan asrama.",
+  "Main judi di lingkungan asrama.",
+  "Membawa wanita ke dalam kamar kecuali muhrim (dengan pintu tertutup).",
+  "Waktu teman wanita berkunjung dari pukul 07:00 pagi s/d 23:00 malam.",
+  "Membunyikan radio / TV / speaker dengan keras pada waktu jam belajar, ibadah, atau istirahat.",
+  "Membawa teman menginap tanpa sepengetahuan pengurus asrama.",
+];
+
+/**
+ * Seed tata tertib default ke Firestore. Skip jika sudah ada item.
+ */
+export async function seedDefaultTataTertib(): Promise<{ created: number; skipped: boolean }> {
+  const existing = await getDocs(collection(db, "tataTertib"));
+  if (!existing.empty) {
+    return { created: 0, skipped: true };
+  }
+  const now = Timestamp.now();
+  const tasks: Promise<unknown>[] = [];
+  DEFAULT_KEWAJIBAN.forEach((teks, idx) => {
+    tasks.push(addDoc(collection(db, "tataTertib"), {
+      kategori: "kewajiban" as KategoriTataTertib,
+      teks,
+      urutan: idx + 1,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  });
+  DEFAULT_LARANGAN.forEach((teks, idx) => {
+    tasks.push(addDoc(collection(db, "tataTertib"), {
+      kategori: "larangan" as KategoriTataTertib,
+      teks,
+      urutan: idx + 1,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  });
+  await Promise.all(tasks);
+  return { created: tasks.length, skipped: false };
+}
+
+// --- KEGIATAN ---
+export async function createKegiatan(data: Omit<Kegiatan, "id">): Promise<string> {
+  const ref = await addDoc(collection(db, "kegiatan"), data);
+  return ref.id;
+}
+
+export async function getAllKegiatan(kategori?: KategoriKegiatan): Promise<Kegiatan[]> {
+  const snap = await getDocs(collection(db, "kegiatan"));
+  let list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Kegiatan));
+  if (kategori) list = list.filter((k) => k.kategori === kategori);
+  return list.sort((a, b) => b.tanggalMulai.seconds - a.tanggalMulai.seconds);
+}
+
+export async function updateKegiatan(
+  id: string,
+  data: Partial<Omit<Kegiatan, "id" | "createdAt">>
+): Promise<void> {
+  await updateDoc(doc(db, "kegiatan", id), {
+    ...data,
+    updatedAt: Timestamp.now(),
+  });
+}
+
+export async function deleteKegiatan(id: string): Promise<void> {
+  await deleteDoc(doc(db, "kegiatan", id));
 }
 
 // --- DASHBOARD STATS ---

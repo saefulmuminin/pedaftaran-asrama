@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 import { NextRequest } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const { to, nama, nomorKamar, status, catatanAdmin } = await req.json();
+  const { to, nama, nomorKamar, status, catatanAdmin, loginEmail, loginPassword } = await req.json();
 
   if (!to || !nama || !status) {
     return Response.json({ error: "Parameter tidak lengkap" }, { status: 400 });
@@ -64,11 +64,30 @@ export async function POST(req: NextRequest) {
       </div>
       ` : ""}
 
+      ${loginEmail && loginPassword ? `
+      <div style="background:#fffbeb;border:2px solid #fde68a;border-radius:16px;padding:24px;margin:24px 0;">
+        <p style="margin:0 0 16px;color:#92400e;font-size:13px;font-weight:900;letter-spacing:0.05em;text-transform:uppercase;">🔑 Kredensial Login Anda</p>
+        <table cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+          <tr>
+            <td style="padding:8px 0;color:#92400e;font-size:12px;font-weight:700;width:100px;">Email</td>
+            <td style="padding:8px 0;color:#451a03;font-size:14px;font-weight:700;font-family:monospace;">${loginEmail}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#92400e;font-size:12px;font-weight:700;">Password</td>
+            <td style="padding:8px 0;color:#451a03;font-size:14px;font-weight:700;font-family:monospace;">${loginPassword}</td>
+          </tr>
+        </table>
+        <p style="margin:16px 0 0;color:#b45309;font-size:11px;font-style:italic;">
+          ⚠ Segera ganti password Anda setelah login pertama di menu Profil.
+        </p>
+      </div>
+      ` : ""}
+
       <div style="background:#f8fafc;border-radius:16px;padding:20px;margin:24px 0;">
         <p style="margin:0 0 12px;color:#374151;font-size:13px;font-weight:700;">Langkah Selanjutnya:</p>
         <ol style="margin:0;padding-left:20px;color:#6b7280;font-size:14px;line-height:2;">
-          <li>Login menggunakan email dan password yang Anda buat saat mendaftar.</li>
-          <li>Lengkapi upload dokumen (Foto, KTP, KTM, Surat Aktif) di dashboard Anda.</li>
+          <li>Login menggunakan kredensial di atas.</li>
+          <li>Ganti password Anda di menu Profil.</li>
           <li>Konfirmasi kehadiran dengan menghubungi pengelola asrama.</li>
         </ol>
       </div>

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getPendaftaranByUser, getNotifikasiByUser } from "@/lib/firestore";
+import { JadwalSholatWidget } from "@/components/features/JadwalSholatWidget";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -73,6 +74,8 @@ export default function MahasiswaDashboard() {
           </div>
         </div>
       </div>
+
+      <JadwalSholatWidget />
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">

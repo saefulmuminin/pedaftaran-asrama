@@ -11,7 +11,6 @@ import {
   BookOpen,
   MapPin,
   Phone,
-  Lock,
   CheckCircle,
   ArrowRight,
   ArrowLeft,
@@ -23,13 +22,6 @@ import {
   X,
   RefreshCw,
 } from "lucide-react";
-import {
-  createUserWithEmailAndPassword,
-  updateProfile,
-} from "firebase/auth";
-import { Timestamp } from "firebase/firestore";
-import { auth } from "@/lib/firebase";
-import { createUserProfile, createPendaftaran } from "@/lib/firestore";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
@@ -319,21 +311,10 @@ const kontakDaruratSchema = z.object({
   noHpOrtu: z.string().min(10, "No HP tidak valid").max(15),
 });
 
-const akunSchema = z
-  .object({
-    password: z.string().min(8, "Password minimal 8 karakter"),
-    konfirmasi: z.string(),
-  })
-  .refine((d) => d.password === d.konfirmasi, {
-    message: "Password tidak sama",
-    path: ["konfirmasi"],
-  });
-
 type BiodataData = z.infer<typeof biodataSchema>;
 type AkademikData = z.infer<typeof akademikSchema>;
 type KontakData = z.infer<typeof kontakSchema>;
 type KontakDaruratData = z.infer<typeof kontakDaruratSchema>;
-type AkunData = z.infer<typeof akunSchema>;
 
 const AGAMA = ["Islam", "Kristen", "Katolik", "Hindu", "Buddha", "Konghucu"];
 const GOLDAR = ["A", "B", "AB", "O", "Tidak Tahu"];
@@ -343,7 +324,6 @@ const STEPS = [
   { num: 2, label: "Akademik", icon: BookOpen },
   { num: 3, label: "Kontak", icon: MapPin },
   { num: 4, label: "Darurat", icon: Phone },
-  { num: 5, label: "Akun", icon: Lock },
 ];
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -382,8 +362,6 @@ export default function DaftarPage() {
     defaultValues: kontakDarurat ?? {},
   });
 
-  const akunForm = useForm<AkunData>({ resolver: zodResolver(akunSchema) });
-
   // ── KTP auto-fill ──────────────────────────────────────────────────────────
 
   const handleKTPResult = (data: KTPData) => {
@@ -403,67 +381,51 @@ export default function DaftarPage() {
   const onBiodata = (data: BiodataData) => { setBiodata(data); setStep(2); };
   const onAkademik = (data: AkademikData) => { setAkademik(data); setStep(3); };
   const onKontak = (data: KontakData) => { setKontak(data); setStep(4); };
-  const onKontakDarurat = (data: KontakDaruratData) => { setKontakDarurat(data); setStep(5); };
 
-  const onAkun = async (data: AkunData) => {
-    if (!biodata || !akademik || !kontak || !kontakDarurat) return;
+  const onKontakDarurat = async (data: KontakDaruratData) => {
+    if (!biodata || !akademik || !kontak) return;
+    setKontakDarurat(data);
     setSubmitting(true);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, kontak.email, data.password);
-      await updateProfile(cred.user, { displayName: biodata.namaLengkap });
-
-      const now = Timestamp.now();
-      await createUserProfile({
-        uid: cred.user.uid,
-        email: kontak.email,
-        displayName: biodata.namaLengkap,
-        role: "mahasiswa",
-        noHp: kontak.noHp,
-        createdAt: now,
-        updatedAt: now,
+      const res = await fetch("/api/pendaftaran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          namaLengkap: biodata.namaLengkap,
+          nik: biodata.nik,
+          tempatLahir: biodata.tempatLahir,
+          tanggalLahir: biodata.tanggalLahir,
+          jenisKelamin: biodata.jenisKelamin,
+          agama: biodata.agama,
+          golonganDarah: biodata.golonganDarah,
+          email: kontak.email,
+          noHp: kontak.noHp,
+          alamatAsal: kontak.alamatAsal,
+          kabupatenAsal: kontak.kabupatenAsal,
+          alasanMasukAsrama: kontak.alasanMasukAsrama,
+          preferensiKamar: kontak.preferensiKamar,
+          nim: akademik.nim,
+          universitas: akademik.universitas,
+          fakultas: akademik.fakultas,
+          jurusan: akademik.jurusan,
+          semester: akademik.semester,
+          ipk: akademik.ipk,
+          namaOrtu: data.namaOrtu,
+          hubunganOrtu: data.hubunganOrtu,
+          noHpOrtu: data.noHpOrtu,
+        }),
       });
 
-      await createPendaftaran({
-        userId: cred.user.uid,
-        status: "submitted",
-        namaLengkap: biodata.namaLengkap,
-        nik: biodata.nik,
-        tempatLahir: biodata.tempatLahir,
-        tanggalLahir: biodata.tanggalLahir,
-        jenisKelamin: biodata.jenisKelamin,
-        agama: biodata.agama,
-        golonganDarah: biodata.golonganDarah,
-        email: kontak.email,
-        noHp: kontak.noHp,
-        alamatAsal: kontak.alamatAsal,
-        kabupatenAsal: kontak.kabupatenAsal,
-        alasanMasukAsrama: kontak.alasanMasukAsrama,
-        preferensiKamar: kontak.preferensiKamar,
-        nim: akademik.nim,
-        universitas: akademik.universitas,
-        fakultas: akademik.fakultas,
-        jurusan: akademik.jurusan,
-        semester: akademik.semester,
-        ipk: akademik.ipk,
-        namaOrtu: kontakDarurat.namaOrtu,
-        hubunganOrtu: kontakDarurat.hubunganOrtu,
-        noHpOrtu: kontakDarurat.noHpOrtu,
-        createdAt: now,
-        updatedAt: now,
-        submittedAt: now,
-      });
-
+      const json = await res.json();
+      if (!res.ok) {
+        error(json.error ?? "Gagal mengirim pendaftaran.");
+        return;
+      }
       success("Pendaftaran berhasil dikirim!");
       setDone(true);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.includes("email-already-in-use")) {
-        error("Email sudah terdaftar. Silakan login atau gunakan email lain.");
-      } else if (msg.includes("weak-password")) {
-        error("Password terlalu lemah.");
-      } else {
-        error("Gagal mendaftar. Periksa koneksi internet Anda.");
-      }
+    } catch (err) {
+      console.error("Submit pendaftaran gagal:", err);
+      error("Gagal mengirim. Periksa koneksi internet Anda.");
     } finally {
       setSubmitting(false);
     }
@@ -911,47 +873,20 @@ export default function DaftarPage() {
                     {...kontakDaruratForm.register("noHpOrtu")}
                   />
                 </div>
-                <NavButtons onBack={() => setStep(3)} loading={false} />
-              </form>
-            )}
 
-            {/* ── STEP 5: BUAT AKUN ───────────────────────────────────────── */}
-            {step === 5 && (
-              <form onSubmit={akunForm.handleSubmit(onAkun)} className="space-y-5">
-                <SectionTitle icon={Lock} title="Buat Akun Login" />
                 <div className="bg-primary-50 border border-primary-100 rounded-2xl p-4 flex gap-3">
                   <Mail className="w-5 h-5 text-primary-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs font-black text-primary-700 uppercase tracking-widest">Email Akun</p>
-                    <p className="text-sm font-bold text-primary-800 mt-0.5">{kontak?.email}</p>
-                    <p className="text-xs text-primary-600 mt-1">
-                      Gunakan email ini untuk login setelah diterima admin.
+                    <p className="text-xs font-black text-primary-700 uppercase tracking-widest">Notifikasi Hasil</p>
+                    <p className="text-xs text-primary-700 mt-1">
+                      Hasil seleksi akan dikirim ke email <span className="font-bold">{kontak?.email}</span>.
+                      Jika diterima, kredensial login akan disertakan di email tersebut.
                     </p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <Input
-                    label="Password"
-                    type="password"
-                    placeholder="Min. 8 karakter"
-                    required
-                    leftIcon={<Lock className="w-4 h-4" />}
-                    error={akunForm.formState.errors.password?.message}
-                    {...akunForm.register("password")}
-                  />
-                  <Input
-                    label="Konfirmasi Password"
-                    type="password"
-                    placeholder="Ulangi password"
-                    required
-                    leftIcon={<Lock className="w-4 h-4" />}
-                    error={akunForm.formState.errors.konfirmasi?.message}
-                    {...akunForm.register("konfirmasi")}
-                  />
-                </div>
 
                 <div className="bg-slate-50 rounded-2xl p-5 space-y-2">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ringkasan</p>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ringkasan Pendaftaran</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-600 font-medium">
                     <span className="text-slate-400">Nama</span>
                     <span className="font-bold">{biodata?.namaLengkap}</span>
@@ -959,12 +894,12 @@ export default function DaftarPage() {
                     <span className="font-bold">{akademik?.universitas}</span>
                     <span className="text-slate-400">Email</span>
                     <span className="font-bold">{kontak?.email}</span>
-                    <span className="text-slate-400">Preferensi</span>
+                    <span className="text-slate-400">Preferensi Kamar</span>
                     <span className="font-bold capitalize">{kontak?.preferensiKamar}</span>
                   </div>
                 </div>
 
-                <NavButtons onBack={() => setStep(4)} loading={submitting} isLast />
+                <NavButtons onBack={() => setStep(3)} loading={submitting} isLast />
               </form>
             )}
           </div>

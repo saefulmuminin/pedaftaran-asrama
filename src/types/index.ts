@@ -17,7 +17,9 @@ export type StatusPendaftaran = "draft" | "submitted" | "diverifikasi" | "diteri
 
 export interface Pendaftaran {
   id: string;
-  userId: string;
+  // Diisi saat admin menerima pendaftaran & akun Auth dibuat.
+  // null saat pendaftaran masih submitted/diverifikasi tanpa akun.
+  userId: string | null;
   status: StatusPendaftaran;
 
   // Biodata Pribadi
@@ -123,4 +125,86 @@ export interface DashboardStats {
   totalKamar: number;
   kamarTersedia: number;
   totalPenghuni: number;
+}
+
+export type KategoriTataTertib = "kewajiban" | "larangan";
+
+export interface TataTertibItem {
+  id: string;
+  kategori: KategoriTataTertib;
+  teks: string;
+  urutan: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type KategoriKegiatan = "komunitas" | "wajib" | "laporan";
+// komunitas = dibuat mahasiswa untuk teman-teman (acara, ngumpul, dll)
+// wajib     = dibuat admin (kerja bakti, rapat) — semua wajib hadir
+// laporan   = mahasiswa lapor kegiatan asrama ke pengurus
+
+export interface Kegiatan {
+  id: string;
+  judul: string;
+  deskripsi: string;
+  kategori: KategoriKegiatan;
+  // Penyelenggara
+  dibuatOlehUid: string;
+  dibuatOlehNama: string;
+  dibuatOlehRole: UserRole;
+  // Waktu pelaksanaan
+  tanggalMulai: Timestamp;
+  tanggalSelesai?: Timestamp;
+  lokasi?: string;
+  // Untuk laporan ke pengurus
+  ditanggapiAdmin?: boolean;
+  catatanAdmin?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Tamu {
+  id: string;
+  // Pelapor
+  dilaporOlehUid: string;
+  dilaporOlehNama: string;
+  dilaporOlehRole: UserRole;
+  // Data tamu
+  namaTamu: string;
+  hubungan: string; // teman, keluarga, dosen, dll
+  noHpTamu?: string;
+  // Tujuan kunjungan
+  untukPenghuni?: string; // nama penghuni yang dikunjungi
+  keperluan: string;
+  waktuKedatangan: Timestamp;
+  waktuKepulangan?: Timestamp;
+  catatan?: string;
+  createdAt: Timestamp;
+}
+
+export type StatusTagihan = "unpaid" | "pending" | "lunas" | "expired" | "cancelled";
+
+export interface Tagihan {
+  id: string;
+  penghuniId: string;
+  userId: string;
+  namaLengkap: string;
+  nomorKamar: string;
+  // Format: "2026-05" untuk bulan Mei 2026
+  periode: string;
+  /** Judul tagihan — mis. "Iuran Bulanan", "Denda Keterlambatan", "Iuran Renovasi" */
+  judul: string;
+  /** Catatan tambahan opsional dari admin */
+  catatan?: string;
+  jumlah: number; // dalam IDR
+  status: StatusTagihan;
+  // Midtrans
+  midtransOrderId?: string;
+  midtransToken?: string;
+  paymentType?: string;
+  paidAt?: Timestamp;
+  expiredAt?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: string; // admin uid
 }

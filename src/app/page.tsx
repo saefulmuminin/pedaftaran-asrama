@@ -921,7 +921,13 @@ export default function LandingPage() {
               © {new Date().getFullYear()} Asrama Mahasiswa Jambi Jakarta. Hak
               Cipta Dilindungi.
             </p>
-            <div className="flex gap-8 text-slate-400 font-bold text-sm">
+            <div className="flex flex-wrap gap-6 md:gap-8 text-slate-400 font-bold text-sm">
+              <Link
+                href="/tata-tertib"
+                className="hover:text-primary-600 transition-colors"
+              >
+                Tata Tertib
+              </Link>
               <Link
                 href="/privacy-policy"
                 className="hover:text-primary-600 transition-colors"

@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,6 +13,10 @@ import {
   X,
   Home,
   CheckSquare,
+  ScrollText,
+  Wallet,
+  UserCheck,
+  Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRole } from "@/hooks/useRole";
@@ -22,7 +25,11 @@ const mahasiswaMenu = [
   { href: "/mahasiswa/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/mahasiswa/pendaftaran", label: "Form Pendaftaran", icon: FileText },
   { href: "/mahasiswa/status", label: "Status Pendaftaran", icon: CheckSquare },
+  { href: "/mahasiswa/kegiatan", label: "Kegiatan", icon: Calendar },
+  { href: "/mahasiswa/tamu", label: "Buku Tamu", icon: UserCheck },
+  { href: "/mahasiswa/tagihan", label: "Tagihan", icon: Wallet },
   { href: "/mahasiswa/notifikasi", label: "Notifikasi", icon: Bell },
+  { href: "/tata-tertib", label: "Tata Tertib", icon: ScrollText },
   { href: "/mahasiswa/profil", label: "Profil Saya", icon: User },
 ];
 
@@ -31,7 +38,11 @@ const adminMenu = [
   { href: "/admin/pendaftar", label: "Data Pendaftar", icon: ClipboardList },
   { href: "/admin/penghuni", label: "Data Penghuni", icon: Users },
   { href: "/admin/kamar", label: "Manajemen Kamar", icon: DoorOpen },
+  { href: "/admin/kegiatan", label: "Kegiatan", icon: Calendar },
+  { href: "/admin/tamu", label: "Buku Tamu", icon: UserCheck },
+  { href: "/admin/tagihan", label: "Tagihan", icon: Wallet },
   { href: "/admin/notifikasi", label: "Kirim Notifikasi", icon: Bell },
+  { href: "/admin/tata-tertib", label: "Kelola Tata Tertib", icon: ScrollText },
   { href: "/admin/profil", label: "Profil Admin", icon: User },
 ];
 

@@ -7,10 +7,57 @@ import {
   MapPin, Phone, FileImage, DoorOpen, ShieldCheck, Mail, Calendar, Info
 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signOut as secondarySignOut } from "firebase/auth";
 import {
   getPendaftaranById, updatePendaftaran, getAllKamar,
   createPenghuni, updateKamar, createNotifikasi, getUserProfile,
+  createUserProfile,
 } from "@/lib/firestore";
+
+const FIREBASE_CONFIG = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+function generatePassword(): string {
+  // 12 karakter alfanumerik + 2 simbol untuk dipakai sebagai password awal
+  const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let pw = "Asrama-";
+  for (let i = 0; i < 8; i++) {
+    pw += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return pw;
+}
+
+async function createMahasiswaAccount(email: string, displayName: string, noHp: string) {
+  // Pakai aplikasi sekunder agar session admin tidak ter-switch
+  const secondaryApp = getApps().find((a) => a.name === "AdminApprover") ??
+    initializeApp(FIREBASE_CONFIG, "AdminApprover");
+  const secondaryAuth = getAuth(secondaryApp);
+
+  const password = generatePassword();
+  const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+  const uid = cred.user.uid;
+
+  await createUserProfile({
+    uid,
+    email,
+    displayName,
+    role: "mahasiswa",
+    noHp,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+
+  try { await secondarySignOut(secondaryAuth); } catch { /* ignore */ }
+
+  return { uid, password };
+}
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -54,14 +101,17 @@ export default function DetailPendaftarPage() {
         status: "diverifikasi",
         diverifikasiAt: Timestamp.now(),
       });
-      await createNotifikasi({
-        userId: pendaftaran.userId,
-        judul: "Pendaftaran Sedang Diverifikasi",
-        pesan: "Tim kami sedang memverifikasi data pendaftaran Anda. Mohon tunggu konfirmasi selanjutnya.",
-        tipe: "info",
-        dibaca: false,
-        createdAt: Timestamp.now(),
-      });
+      // Notifikasi Firestore hanya jika user sudah punya akun (jarang di tahap ini)
+      if (pendaftaran.userId) {
+        await createNotifikasi({
+          userId: pendaftaran.userId,
+          judul: "Pendaftaran Sedang Diverifikasi",
+          pesan: "Tim kami sedang memverifikasi data pendaftaran Anda. Mohon tunggu konfirmasi selanjutnya.",
+          tipe: "info",
+          dibaca: false,
+          createdAt: Timestamp.now(),
+        });
+      }
       setPendaftaran((prev) => prev ? { ...prev, status: "diverifikasi" } : null);
       setVerifyModal(false);
       success("Status diperbarui: Sedang Diverifikasi");
@@ -76,14 +126,13 @@ export default function DetailPendaftarPage() {
     to: string,
     nama: string,
     status: "diterima" | "ditolak",
-    nomorKamar?: string,
-    catatanAdmin?: string
+    opts: { nomorKamar?: string; catatanAdmin?: string; loginEmail?: string; loginPassword?: string } = {}
   ) => {
     try {
       await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, nama, status, nomorKamar, catatanAdmin }),
+        body: JSON.stringify({ to, nama, status, ...opts }),
       });
     } catch {
       // Email gagal tidak membatalkan proses utama
@@ -98,15 +147,32 @@ export default function DetailPendaftarPage() {
     setActionLoading(true);
     try {
       const kamar = kamarList.find((k) => k.id === selectedKamar);
+
+      // Step 1: Buat akun Auth + users doc (kalau belum ada)
+      let userId = pendaftaran.userId;
+      let generatedPassword: string | undefined;
+      if (!userId) {
+        const result = await createMahasiswaAccount(
+          pendaftaran.email,
+          pendaftaran.namaLengkap,
+          pendaftaran.noHp
+        );
+        userId = result.uid;
+        generatedPassword = result.password;
+      }
+
+      // Step 2: Update pendaftaran (status + link userId + nomorKamar)
       await updatePendaftaran(id, {
+        userId,
         status: "diterima",
         diterimaAt: Timestamp.now(),
         nomorKamar: kamar?.nomorKamar,
       });
 
+      // Step 3: Buat penghuni
       await createPenghuni({
         pendaftaranId: id,
-        userId: pendaftaran.userId,
+        userId,
         namaLengkap: pendaftaran.namaLengkap,
         nim: pendaftaran.nim,
         universitas: pendaftaran.universitas,
@@ -118,16 +184,18 @@ export default function DetailPendaftarPage() {
         createdAt: Timestamp.now(),
       });
 
+      // Step 4: Update kapasitas kamar
       if (kamar) {
         await updateKamar(selectedKamar, {
           terisi: kamar.terisi + 1,
-          penghuniIds: [...(kamar.penghuniIds ?? []), pendaftaran.userId],
+          penghuniIds: [...(kamar.penghuniIds ?? []), userId],
           status: kamar.terisi + 1 >= kamar.kapasitas ? "penuh" : "tersedia",
         });
       }
 
+      // Step 5: Notifikasi in-app
       await createNotifikasi({
-        userId: pendaftaran.userId,
+        userId,
         judul: "Pendaftaran Diterima!",
         pesan: `Selamat! Pendaftaran Anda telah diterima. Anda ditempatkan di kamar ${kamar?.nomorKamar ?? "-"}.`,
         tipe: "success",
@@ -135,18 +203,28 @@ export default function DetailPendaftarPage() {
         createdAt: Timestamp.now(),
       });
 
-      await sendEmail(
-        pendaftaran.email,
-        pendaftaran.namaLengkap,
-        "diterima",
-        kamar?.nomorKamar
-      );
+      // Step 6: Email dengan kredensial (jika baru dibuat)
+      await sendEmail(pendaftaran.email, pendaftaran.namaLengkap, "diterima", {
+        nomorKamar: kamar?.nomorKamar,
+        loginEmail: generatedPassword ? pendaftaran.email : undefined,
+        loginPassword: generatedPassword,
+      });
 
-      setPendaftaran((prev) => prev ? { ...prev, status: "diterima", nomorKamar: kamar?.nomorKamar } : null);
+      setPendaftaran((prev) => prev ? { ...prev, userId, status: "diterima", nomorKamar: kamar?.nomorKamar } : null);
       setApproveModal(false);
-      success("Pendaftar berhasil diterima! Email notifikasi terkirim.");
-    } catch {
-      error("Gagal memproses penerimaan.");
+      success(
+        generatedPassword
+          ? "Pendaftar diterima! Akun dibuat & email kredensial terkirim."
+          : "Pendaftar berhasil diterima! Email notifikasi terkirim."
+      );
+    } catch (err) {
+      console.error("Approve gagal:", err);
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("email-already-in-use")) {
+        error("Email sudah terdaftar di sistem. Hubungi mahasiswa untuk konfirmasi.");
+      } else {
+        error("Gagal memproses penerimaan.");
+      }
     } finally {
       setActionLoading(false);
     }
@@ -161,22 +239,21 @@ export default function DetailPendaftarPage() {
         ditolakAt: Timestamp.now(),
         catatanAdmin: rejectNote,
       });
-      await createNotifikasi({
-        userId: pendaftaran.userId,
-        judul: "Pendaftaran Tidak Dapat Diproses",
-        pesan: rejectNote || "Maaf, pendaftaran Anda tidak dapat kami proses saat ini.",
-        tipe: "error",
-        dibaca: false,
-        createdAt: Timestamp.now(),
-      });
+      // Hanya buat notifikasi in-app jika mahasiswa sudah punya akun
+      if (pendaftaran.userId) {
+        await createNotifikasi({
+          userId: pendaftaran.userId,
+          judul: "Pendaftaran Tidak Dapat Diproses",
+          pesan: rejectNote || "Maaf, pendaftaran Anda tidak dapat kami proses saat ini.",
+          tipe: "error",
+          dibaca: false,
+          createdAt: Timestamp.now(),
+        });
+      }
 
-      await sendEmail(
-        pendaftaran.email,
-        pendaftaran.namaLengkap,
-        "ditolak",
-        undefined,
-        rejectNote
-      );
+      await sendEmail(pendaftaran.email, pendaftaran.namaLengkap, "ditolak", {
+        catatanAdmin: rejectNote,
+      });
 
       setPendaftaran((prev) => prev ? { ...prev, status: "ditolak", catatanAdmin: rejectNote } : null);
       setRejectModal(false);

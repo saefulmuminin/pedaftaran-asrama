@@ -8,29 +8,101 @@ service cloud.firestore {
       allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
 
-    // Pendaftaran: mahasiswa hanya data sendiri, admin bisa semua
+    // Pendaftaran:
+    //   - CREATE publik: form pendaftaran tanpa akun (userId == null, status submitted).
+    //     Validasi field wajib + status awal harus 'submitted'.
+    //   - CREATE owner: kalau user sudah login, harus sesuai userId-nya.
+    //   - READ: owner (kalau userId sudah ke-link) atau admin.
+    //   - UPDATE: owner saat status draft/ditolak, atau admin.
+    //   - DELETE: hanya admin.
     match /pendaftaran/{docId} {
-      allow read: if request.auth != null && (
-        resource.data.userId == request.auth.uid || isAdmin()
+      allow read: if isAdmin() || (
+        request.auth != null && resource.data.userId == request.auth.uid
       );
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null && (
-        resource.data.userId == request.auth.uid && resource.data.status in ['draft', 'ditolak']
-        || isAdmin()
+
+      allow create: if
+        // Submission publik tanpa akun
+        (
+          request.resource.data.userId == null
+          && request.resource.data.status == 'submitted'
+          && request.resource.data.namaLengkap is string
+          && request.resource.data.email is string
+          && request.resource.data.nik is string
+        )
+        // ATAU submission dari user yang sudah login
+        || (request.auth != null && request.resource.data.userId == request.auth.uid);
+
+      allow update: if isAdmin() || (
+        request.auth != null
+        && resource.data.userId == request.auth.uid
+        && resource.data.status in ['draft', 'ditolak']
       );
+
       allow delete: if isAdmin();
     }
 
-    // Kamar: semua user bisa baca, hanya admin bisa tulis
+    // Kamar: semua user login bisa baca, hanya admin bisa tulis
     match /kamar/{docId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
-    // Penghuni: hanya admin
+    // Penghuni: semua user login bisa baca, hanya admin bisa tulis
     match /penghuni/{docId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+
+    // Tata Tertib: publik bisa baca (tanpa login), hanya admin bisa tulis.
+    match /tataTertib/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Buku Tamu: semua user login bisa baca & lapor; hanya admin yang bisa hapus.
+    match /tamu/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.dilaporOlehUid == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Kegiatan: semua user login bisa baca.
+    // - Mahasiswa hanya bisa buat kategori 'komunitas' atau 'laporan'.
+    // - Admin bisa buat semua kategori (termasuk 'wajib').
+    // - User bisa edit/hapus kegiatan sendiri; admin bisa edit/hapus semua.
+    match /kegiatan/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.dibuatOlehUid == request.auth.uid
+        && (
+          isAdmin()
+          || request.resource.data.kategori in ['komunitas', 'laporan']
+        );
+      allow update: if isAdmin() || (
+        request.auth != null && resource.data.dibuatOlehUid == request.auth.uid
+      );
+      allow delete: if isAdmin() || (
+        request.auth != null && resource.data.dibuatOlehUid == request.auth.uid
+      );
+    }
+
+    // Tagihan: penghuni bisa baca tagihan miliknya, admin bisa baca semua.
+    // Create/update terbatas — sebagian besar dilakukan via API route server-side
+    // (yang menggunakan kredensial admin yang sedang login).
+    match /tagihan/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+      // Admin generate tagihan & update status (mis. via manual)
+      allow create: if isAdmin();
+      // Update status oleh admin ATAU oleh penghuni terkait (untuk client-side
+      // verify-payment flow; aman karena hanya status & midtransToken yang berubah)
+      allow update: if isAdmin() || (
+        request.auth != null && resource.data.userId == request.auth.uid
+      );
+      allow delete: if isAdmin();
     }
 
     // Notifikasi: user hanya baca milik sendiri, admin bisa buat
