@@ -184,6 +184,12 @@ export interface Tamu {
 
 export type StatusTagihan = "unpaid" | "pending" | "lunas" | "expired" | "cancelled";
 
+export interface PaymentSettings {
+  /** Metode Midtrans yang diaktifkan, mis. ['qris', 'gopay', 'bca_va']. */
+  enabledMethods: string[];
+  updatedAt: Timestamp;
+}
+
 export interface Tagihan {
   id: string;
   penghuniId: string;

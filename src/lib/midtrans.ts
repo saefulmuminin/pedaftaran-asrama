@@ -36,6 +36,8 @@ export interface CreateSnapParams {
   }>;
   /** URL redirect setelah user selesai pembayaran (Snap mengembalikan order_id & transaction_status sebagai query param). */
   finishUrl?: string;
+  /** Restrict metode pembayaran yang muncul di popup Snap, mis. ['qris']. */
+  enabledPayments?: string[];
 }
 
 export interface SnapResponse {
@@ -60,6 +62,9 @@ export async function createSnapTransaction(params: CreateSnapParams): Promise<S
 
   if (params.finishUrl) {
     body.callbacks = { finish: params.finishUrl };
+  }
+  if (params.enabledPayments && params.enabledPayments.length > 0) {
+    body.enabled_payments = params.enabledPayments;
   }
 
   const res = await fetch(`${SNAP_BASE}/transactions`, {

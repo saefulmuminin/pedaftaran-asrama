@@ -17,6 +17,7 @@ import {
   Wallet,
   UserCheck,
   Calendar,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRole } from "@/hooks/useRole";
@@ -41,6 +42,7 @@ const adminMenu = [
   { href: "/admin/kegiatan", label: "Kegiatan", icon: Calendar },
   { href: "/admin/tamu", label: "Buku Tamu", icon: UserCheck },
   { href: "/admin/tagihan", label: "Tagihan", icon: Wallet },
+  { href: "/admin/pengaturan-pembayaran", label: "Pengaturan Bayar", icon: CreditCard },
   { href: "/admin/notifikasi", label: "Kirim Notifikasi", icon: Bell },
   { href: "/admin/tata-tertib", label: "Kelola Tata Tertib", icon: ScrollText },
   { href: "/admin/profil", label: "Profil Admin", icon: User },

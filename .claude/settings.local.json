@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"^      </div>$\\\\|^    </>\" /Users/l-2024-diti-0101/Desktop/github-iful/pedaftran-asrama/pedaftaran-asrama/src/app/mahasiswa/tagihan/page.tsx)"
+    ]
+  }
+}

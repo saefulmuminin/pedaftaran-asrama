@@ -4,7 +4,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { Wallet, CheckCircle, Clock, AlertTriangle, XCircle, Loader2 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
-import { getTagihanByUser, formatPeriode, getCurrentPeriode, updateTagihan } from "@/lib/firestore";
+import {
+  getTagihanByUser, formatPeriode, getCurrentPeriode, updateTagihan, getPaymentSettings,
+} from "@/lib/firestore";
+import { PAYMENT_METHODS, CATEGORY_LABEL, type PaymentCategory, type PaymentMethodDef } from "@/lib/payment-methods";
+import { Modal } from "@/components/ui/Modal";
 import type { StatusTagihan as StatusTagihanType } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { Card } from "@/components/ui/Card";
@@ -44,6 +48,13 @@ export default function MahasiswaTagihanPage() {
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<string | null>(null);
   const redirectHandledRef = useRef(false);
+
+  // Method selection modal state
+  const [methodModalOpen, setMethodModalOpen] = useState(false);
+  const [selectedTagihan, setSelectedTagihan] = useState<Tagihan | null>(null);
+  const [availableMethods, setAvailableMethods] = useState<PaymentMethodDef[]>([]);
+  const [selectedMethodId, setSelectedMethodId] = useState<string>("");
+  const [loadingMethods, setLoadingMethods] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
@@ -144,15 +155,41 @@ export default function MahasiswaTagihanPage() {
     sync();
   }, [verifyPayment, load, success, error, info]);
 
-  const handlePay = async (tagihan: Tagihan) => {
-    if (!userProfile) return;
+  // Step 1: User klik "Bayar" → load metode aktif dari settings, buka modal pilih metode.
+  const openMethodModal = async (tagihan: Tagihan) => {
+    setSelectedTagihan(tagihan);
+    setSelectedMethodId("");
+    setLoadingMethods(true);
+    setMethodModalOpen(true);
+    try {
+      const settings = await getPaymentSettings();
+      const enabled = PAYMENT_METHODS.filter((m) => settings.enabledMethods.includes(m.id));
+      setAvailableMethods(enabled);
+      if (enabled.length === 1) setSelectedMethodId(enabled[0].id);
+    } catch (err) {
+      console.error("Load payment methods gagal:", err);
+      error("Gagal memuat metode pembayaran.");
+      setMethodModalOpen(false);
+    } finally {
+      setLoadingMethods(false);
+    }
+  };
+
+  // Step 2: User pilih metode → call API dengan enabled_payments = [selected] → buka Snap popup.
+  const handleConfirmPay = async () => {
+    if (!selectedTagihan || !userProfile) return;
+    if (!selectedMethodId) {
+      error("Pilih metode pembayaran dulu.");
+      return;
+    }
     if (!CLIENT_KEY) {
       error("Midtrans Client Key belum dikonfigurasi.");
       return;
     }
+    const tagihan = selectedTagihan;
     setPayingId(tagihan.id);
+    setMethodModalOpen(false);
     try {
-      // 1. Buat Snap transaction di server (tanpa Firestore I/O)
       const res = await fetch("/api/midtrans/create-transaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -163,6 +200,7 @@ export default function MahasiswaTagihanPage() {
           periode: formatPeriode(tagihan.periode),
           namaLengkap: tagihan.namaLengkap,
           email: userProfile.email,
+          enabledPayments: [selectedMethodId],
         }),
       });
       const json = await res.json() as { token?: string; orderId?: string; error?: string };
@@ -171,7 +209,6 @@ export default function MahasiswaTagihanPage() {
         return;
       }
 
-      // 2. Update tagihan doc dengan orderId/token (dari client, ada auth)
       try {
         await updateTagihan(tagihan.id, {
           midtransOrderId: json.orderId,
@@ -205,7 +242,6 @@ export default function MahasiswaTagihanPage() {
           error("Pembayaran gagal.");
         },
         onClose: () => {
-          // User close popup tanpa bayar — re-fetch status untuk safety
           verifyPayment(orderId, tagihan.id);
         },
       });
@@ -307,7 +343,7 @@ export default function MahasiswaTagihanPage() {
                       <Button
                         size="md"
                         className="rounded-2xl font-bold"
-                        onClick={() => handlePay(t)}
+                        onClick={() => openMethodModal(t)}
                         loading={payingId === t.id}
                         disabled={payingId !== null}
                       >
@@ -321,6 +357,113 @@ export default function MahasiswaTagihanPage() {
           </div>
         )}
       </div>
+
+      {/* Modal pilih metode pembayaran (custom UI, BUKAN popup Midtrans) */}
+      <Modal
+        open={methodModalOpen}
+        onClose={() => !payingId && setMethodModalOpen(false)}
+        title="Pilih Metode Pembayaran"
+        size="md"
+      >
+        <div className="space-y-4">
+          {selectedTagihan && (
+            <div className="p-4 rounded-2xl bg-primary-50 border border-primary-100">
+              <p className="text-[10px] font-black text-primary-700 uppercase tracking-widest">
+                Total Tagihan
+              </p>
+              <p className="text-2xl font-black text-primary-900 mt-1">
+                Rp {selectedTagihan.jumlah.toLocaleString("id-ID")}
+              </p>
+              <p className="text-xs text-primary-600 font-medium mt-1">
+                {selectedTagihan.judul ?? "Iuran Bulanan"} · {formatPeriode(selectedTagihan.periode)}
+              </p>
+            </div>
+          )}
+
+          {loadingMethods ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                Memuat metode...
+              </p>
+            </div>
+          ) : availableMethods.length === 0 ? (
+            <div className="p-5 rounded-2xl bg-rose-50 border border-rose-100 text-center">
+              <p className="text-sm font-bold text-rose-700">
+                Belum ada metode pembayaran yang aktif.
+              </p>
+              <p className="text-xs text-rose-600 mt-1">
+                Hubungi admin untuk mengaktifkan metode pembayaran.
+              </p>
+            </div>
+          ) : (
+            <>
+              {(["instant", "ewallet", "va", "card"] as PaymentCategory[]).map((cat) => {
+                const inCat = availableMethods.filter((m) => m.category === cat);
+                if (inCat.length === 0) return null;
+                return (
+                  <div key={cat} className="space-y-2">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      {CATEGORY_LABEL[cat]}
+                    </p>
+                    <div className="space-y-2">
+                      {inCat.map((m) => {
+                        const active = selectedMethodId === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setSelectedMethodId(m.id)}
+                            className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition text-left ${
+                              active
+                                ? "bg-primary-50 border-primary-500 shadow-sm"
+                                : "bg-white border-slate-200 hover:border-primary-300"
+                            }`}
+                          >
+                            <div className="text-2xl shrink-0 w-10 text-center">{m.icon}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-slate-900 text-sm">{m.label}</p>
+                              {m.note && (
+                                <p className="text-xs text-slate-500 font-medium mt-0.5">{m.note}</p>
+                              )}
+                            </div>
+                            <div
+                              className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition ${
+                                active ? "border-primary-600 bg-primary-600" : "border-slate-300"
+                              }`}
+                            >
+                              {active && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-2xl font-bold border-slate-200"
+              onClick={() => setMethodModalOpen(false)}
+              disabled={!!payingId}
+            >
+              Batal
+            </Button>
+            <Button
+              className="flex-1 rounded-2xl font-bold"
+              onClick={handleConfirmPay}
+              disabled={!selectedMethodId || !!payingId || availableMethods.length === 0}
+              loading={!!payingId}
+            >
+              Lanjut Bayar
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

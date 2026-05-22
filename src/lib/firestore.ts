@@ -29,7 +29,9 @@ import type {
   KategoriKegiatan,
   TataTertibItem,
   KategoriTataTertib,
+  PaymentSettings,
 } from "@/types";
+import { DEFAULT_ENABLED_METHODS } from "./payment-methods";
 
 export const TAGIHAN_BULANAN = 70_000; // Rp 70.000 per bulan per penghuni
 
@@ -426,6 +428,29 @@ export async function createTagihanCustom(
 
 export async function deleteTagihan(id: string): Promise<void> {
   await deleteDoc(doc(db, "tagihan", id));
+}
+
+// --- PAYMENT SETTINGS ---
+const PAYMENT_SETTINGS_DOC = doc(db, "pengaturan", "pembayaran");
+
+export async function getPaymentSettings(): Promise<PaymentSettings> {
+  const snap = await getDoc(PAYMENT_SETTINGS_DOC);
+  if (!snap.exists()) {
+    // Default kalau belum diatur admin
+    return { enabledMethods: DEFAULT_ENABLED_METHODS, updatedAt: Timestamp.now() };
+  }
+  const data = snap.data() as PaymentSettings;
+  return {
+    enabledMethods: data.enabledMethods?.length ? data.enabledMethods : DEFAULT_ENABLED_METHODS,
+    updatedAt: data.updatedAt ?? Timestamp.now(),
+  };
+}
+
+export async function updatePaymentSettings(enabledMethods: string[]): Promise<void> {
+  await setDoc(PAYMENT_SETTINGS_DOC, {
+    enabledMethods,
+    updatedAt: Timestamp.now(),
+  });
 }
 
 // --- TAMU ---

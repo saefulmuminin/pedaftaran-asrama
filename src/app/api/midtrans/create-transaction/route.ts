@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
     periode: string;
     namaLengkap: string;
     email: string;
+    enabledPayments?: string[];
   };
   try {
     body = await req.json();
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Payload tidak valid" }, { status: 400 });
   }
 
-  const { tagihanId, jumlah, judul, periode, namaLengkap, email } = body;
+  const { tagihanId, jumlah, judul, periode, namaLengkap, email, enabledPayments } = body;
   if (!tagihanId || !jumlah || !judul || !periode || !namaLengkap || !email) {
     return Response.json({ error: "Field wajib belum lengkap" }, { status: 400 });
   }
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       finishUrl,
+      enabledPayments,
     });
 
     return Response.json({ token: snap.token, orderId });

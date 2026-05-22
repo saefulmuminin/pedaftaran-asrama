@@ -59,6 +59,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Pengaturan sistem (mis. metode pembayaran aktif): semua user login bisa baca,
+    // hanya admin bisa tulis.
+    match /pengaturan/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
     // Buku Tamu: semua user login bisa baca & lapor; hanya admin yang bisa hapus.
     match /tamu/{docId} {
       allow read: if request.auth != null;
