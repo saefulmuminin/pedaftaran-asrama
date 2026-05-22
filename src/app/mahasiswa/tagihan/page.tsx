@@ -164,6 +164,11 @@ export default function MahasiswaTagihanPage() {
     setMethodModalOpen(true);
     try {
       const settings = await getPaymentSettings();
+      console.log("[Tagihan] Payment settings:", {
+        enabledMethods: settings.enabledMethods,
+        logoKeys: Object.keys(settings.methodLogos ?? {}),
+        hasLogos: !!settings.methodLogos && Object.keys(settings.methodLogos).length > 0,
+      });
       const enabled = PAYMENT_METHODS.filter((m) => settings.enabledMethods.includes(m.id));
       setAvailableMethods(enabled);
       setMethodLogos(settings.methodLogos ?? {});
