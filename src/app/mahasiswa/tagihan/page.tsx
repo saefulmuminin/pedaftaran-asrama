@@ -3,7 +3,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { Wallet, CheckCircle, Clock, AlertTriangle, XCircle, Loader2 } from "lucide-react";
-import { getTagihanByUser, formatPeriode, getCurrentPeriode } from "@/lib/firestore";
+import { Timestamp } from "firebase/firestore";
+import { getTagihanByUser, formatPeriode, getCurrentPeriode, updateTagihan } from "@/lib/firestore";
+import type { StatusTagihan as StatusTagihanType } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -56,12 +58,29 @@ export default function MahasiswaTagihanPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const verifyPayment = useCallback(async (orderId: string) => {
+  // Verifikasi status pembayaran ke Midtrans (via API route), lalu update
+  // tagihan doc di Firestore dari client (yang punya auth context).
+  const verifyPayment = useCallback(async (orderId: string, tagihanId: string) => {
     try {
-      await fetch("/api/midtrans/verify-payment", {
+      const res = await fetch("/api/midtrans/verify-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId }),
+      });
+      const json = await res.json() as {
+        status?: StatusTagihanType;
+        paymentType?: string;
+        error?: string;
+      };
+      if (!res.ok || !json.status) {
+        console.warn("Verify payment response error:", json.error);
+        return;
+      }
+      // Update Firestore dari client
+      await updateTagihan(tagihanId, {
+        status: json.status,
+        ...(json.paymentType ? { paymentType: json.paymentType } : {}),
+        ...(json.status === "lunas" ? { paidAt: Timestamp.now() } : {}),
       });
     } catch (err) {
       console.warn("Verify payment gagal:", err);
@@ -85,9 +104,11 @@ export default function MahasiswaTagihanPage() {
     redirectHandledRef.current = true;
 
     const sync = async () => {
-      // Sync status ke Firestore via Midtrans status endpoint
+      // Sync status: cari tagihan yang midtransOrderId match
       if (orderId) {
-        await verifyPayment(orderId);
+        const list = await getTagihanByUser(user?.uid ?? "");
+        const match = list.find((t) => t.midtransOrderId === orderId);
+        if (match) await verifyPayment(orderId, match.id);
       }
 
       // Toast berdasarkan status — utamakan transaction_status dari Midtrans
@@ -131,15 +152,35 @@ export default function MahasiswaTagihanPage() {
     }
     setPayingId(tagihan.id);
     try {
+      // 1. Buat Snap transaction di server (tanpa Firestore I/O)
       const res = await fetch("/api/midtrans/create-transaction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tagihanId: tagihan.id, email: userProfile.email }),
+        body: JSON.stringify({
+          tagihanId: tagihan.id,
+          jumlah: tagihan.jumlah,
+          judul: tagihan.judul ?? "Iuran Bulanan",
+          periode: formatPeriode(tagihan.periode),
+          namaLengkap: tagihan.namaLengkap,
+          email: userProfile.email,
+        }),
       });
-      const json = await res.json();
-      if (!res.ok) {
+      const json = await res.json() as { token?: string; orderId?: string; error?: string };
+      if (!res.ok || !json.token || !json.orderId) {
         error(json.error ?? "Gagal membuat transaksi.");
         return;
+      }
+
+      // 2. Update tagihan doc dengan orderId/token (dari client, ada auth)
+      try {
+        await updateTagihan(tagihan.id, {
+          midtransOrderId: json.orderId,
+          midtransToken: json.token,
+          status: "pending",
+          expiredAt: Timestamp.fromMillis(Date.now() + 24 * 60 * 60 * 1000),
+        });
+      } catch (err) {
+        console.warn("Update tagihan gagal (lanjut bayar):", err);
       }
 
       const win = window as SnapWindow;
@@ -148,14 +189,15 @@ export default function MahasiswaTagihanPage() {
         return;
       }
 
+      const orderId = json.orderId;
       win.snap.pay(json.token, {
         onSuccess: async (result) => {
-          await verifyPayment(result.order_id);
+          await verifyPayment(result.order_id, tagihan.id);
           success("Pembayaran berhasil!");
           await load();
         },
         onPending: async (result) => {
-          await verifyPayment(result.order_id);
+          await verifyPayment(result.order_id, tagihan.id);
           info("Pembayaran sedang diproses.");
           await load();
         },
@@ -164,7 +206,7 @@ export default function MahasiswaTagihanPage() {
         },
         onClose: () => {
           // User close popup tanpa bayar — re-fetch status untuk safety
-          verifyPayment(json.orderId);
+          verifyPayment(orderId, tagihan.id);
         },
       });
     } catch (err) {
