@@ -51,7 +51,7 @@ function compressImage(
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-async function fileToBase64(
+export async function fileToBase64(
   file: File,
   maxSize: number,
   quality: number

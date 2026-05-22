@@ -187,6 +187,8 @@ export type StatusTagihan = "unpaid" | "pending" | "lunas" | "expired" | "cancel
 export interface PaymentSettings {
   /** Metode Midtrans yang diaktifkan, mis. ['qris', 'gopay', 'bca_va']. */
   enabledMethods: string[];
+  /** Logo custom per metode (base64 data URL). Kosong = pakai default. */
+  methodLogos?: Record<string, string>;
   updatedAt: Timestamp;
 }
 

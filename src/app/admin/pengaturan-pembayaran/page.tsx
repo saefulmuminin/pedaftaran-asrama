@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { CreditCard, Check, Loader2, Save, AlertTriangle } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { CreditCard, Check, Loader2, Save, AlertTriangle, Upload, X } from "lucide-react";
 import { getPaymentSettings, updatePaymentSettings } from "@/lib/firestore";
+import { fileToBase64 } from "@/lib/storage";
 import {
   PAYMENT_METHODS,
   CATEGORY_LABEL,
@@ -13,16 +14,24 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 
+const LOGO_MAX_SIZE = 128;
+const LOGO_MAX_BYTES = 500 * 1024; // 500KB sebelum resize
+
 export default function PengaturanPembayaranPage() {
   const { success, error } = useToast();
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
+  const [logos, setLogos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const settings = await getPaymentSettings();
     setEnabled(new Set(settings.enabledMethods));
+    setLogos(settings.methodLogos ?? {});
     setLoading(false);
   }, []);
 
@@ -37,6 +46,42 @@ export default function PengaturanPembayaranPage() {
     });
   };
 
+  const handleUploadClick = (methodId: string) => {
+    setActiveMethodId(methodId);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const methodId = activeMethodId;
+    if (!file || !methodId) return;
+    if (file.size > LOGO_MAX_BYTES) {
+      error("Ukuran file maksimal 500KB.");
+      return;
+    }
+    setUploadingFor(methodId);
+    try {
+      const dataURL = await fileToBase64(file, LOGO_MAX_SIZE, 0.9);
+      setLogos((prev) => ({ ...prev, [methodId]: dataURL }));
+      success(`Logo untuk ${methodId} di-upload. Klik Simpan untuk apply.`);
+    } catch (err) {
+      console.error(err);
+      error("Gagal mengupload logo.");
+    } finally {
+      setUploadingFor(null);
+      setActiveMethodId(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveLogo = (methodId: string) => {
+    setLogos((prev) => {
+      const next = { ...prev };
+      delete next[methodId];
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (enabled.size === 0) {
       error("Minimal 1 metode harus aktif.");
@@ -44,7 +89,7 @@ export default function PengaturanPembayaranPage() {
     }
     setSaving(true);
     try {
-      await updatePaymentSettings(Array.from(enabled));
+      await updatePaymentSettings(Array.from(enabled), logos);
       success("Pengaturan pembayaran tersimpan.");
     } catch (err) {
       console.error(err);
@@ -58,7 +103,6 @@ export default function PengaturanPembayaranPage() {
     setEnabled(new Set(DEFAULT_ENABLED_METHODS));
   };
 
-  // Group by category
   const grouped = PAYMENT_METHODS.reduce<Record<PaymentCategory, typeof PAYMENT_METHODS>>((acc, m) => {
     if (!acc[m.category]) acc[m.category] = [];
     acc[m.category].push(m);
@@ -67,11 +111,19 @@ export default function PengaturanPembayaranPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-bottom duration-700 pb-20">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Pengaturan Pembayaran</h1>
           <p className="text-slate-500 font-medium mt-1">
-            Aktifkan metode yang boleh dipilih mahasiswa saat membayar tagihan.
+            Aktifkan metode pembayaran & upload logo custom (opsional).
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -102,7 +154,8 @@ export default function PengaturanPembayaranPage() {
           <p className="font-bold text-amber-900 text-sm">Catatan</p>
           <p className="text-xs font-medium text-amber-800 leading-relaxed">
             Metode yang Anda aktifkan harus sudah <span className="font-bold">diaktifkan juga di Midtrans Dashboard</span>.
-            Aktif di sini tapi tidak di Midtrans → Snap akan tetap menolaknya.
+            Logo custom hanya tampil di modal pilih metode di app — popup Snap Midtrans tetap pakai logo standar mereka.
+            Max file 500KB · format PNG/JPG/SVG/WebP · otomatis di-resize ke 128px.
           </p>
         </div>
       </div>
@@ -125,14 +178,24 @@ export default function PengaturanPembayaranPage() {
               <div className="divide-y divide-slate-50">
                 {grouped[cat].map((m) => {
                   const active = enabled.has(m.id);
+                  const customLogo = logos[m.id];
+                  const isUploading = uploadingFor === m.id;
                   return (
-                    <label
+                    <div
                       key={m.id}
-                      className={`flex items-center gap-4 px-6 py-4 cursor-pointer transition-colors ${
-                        active ? "bg-emerald-50/40 hover:bg-emerald-50/60" : "hover:bg-slate-50/50"
+                      className={`flex items-center gap-4 px-6 py-4 transition-colors ${
+                        active ? "bg-emerald-50/40" : ""
                       }`}
                     >
-                      <div className="text-2xl shrink-0 w-10 text-center">{m.icon}</div>
+                      {/* Logo preview */}
+                      <div className="w-14 h-14 rounded-2xl border border-slate-200 bg-white flex items-center justify-center shrink-0 overflow-hidden">
+                        {customLogo ? (
+                          <img src={customLogo} alt={m.label} className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-2xl">{m.icon}</span>
+                        )}
+                      </div>
+
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-slate-900">{m.label}</p>
                         <p className="text-[10px] font-mono text-slate-400 mt-0.5">{m.id}</p>
@@ -140,6 +203,35 @@ export default function PengaturanPembayaranPage() {
                           <p className="text-xs text-slate-500 font-medium mt-0.5">{m.note}</p>
                         )}
                       </div>
+
+                      {/* Upload / Remove logo buttons */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleUploadClick(m.id)}
+                          disabled={isUploading}
+                          className="p-2 rounded-xl text-slate-500 hover:bg-primary-50 hover:text-primary-600 transition disabled:opacity-50"
+                          title="Upload logo"
+                        >
+                          {isUploading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                        </button>
+                        {customLogo && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLogo(m.id)}
+                            className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition"
+                            title="Hapus logo custom"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Toggle */}
                       <button
                         type="button"
                         role="switch"
@@ -157,7 +249,7 @@ export default function PengaturanPembayaranPage() {
                           {active && <Check className="w-3 h-3 text-emerald-500 m-1" />}
                         </span>
                       </button>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
@@ -174,12 +266,18 @@ export default function PengaturanPembayaranPage() {
           {Array.from(enabled).map((id) => {
             const m = PAYMENT_METHODS.find((x) => x.id === id);
             if (!m) return null;
+            const customLogo = logos[id];
             return (
               <span
                 key={id}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200 text-xs font-bold text-slate-700"
               >
-                <span>{m.icon}</span> {m.label}
+                {customLogo ? (
+                  <img src={customLogo} alt="" className="w-4 h-4 object-contain" />
+                ) : (
+                  <span>{m.icon}</span>
+                )}
+                {m.label}
               </span>
             );
           })}

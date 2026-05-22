@@ -436,19 +436,23 @@ const PAYMENT_SETTINGS_DOC = doc(db, "pengaturan", "pembayaran");
 export async function getPaymentSettings(): Promise<PaymentSettings> {
   const snap = await getDoc(PAYMENT_SETTINGS_DOC);
   if (!snap.exists()) {
-    // Default kalau belum diatur admin
-    return { enabledMethods: DEFAULT_ENABLED_METHODS, updatedAt: Timestamp.now() };
+    return { enabledMethods: DEFAULT_ENABLED_METHODS, methodLogos: {}, updatedAt: Timestamp.now() };
   }
   const data = snap.data() as PaymentSettings;
   return {
     enabledMethods: data.enabledMethods?.length ? data.enabledMethods : DEFAULT_ENABLED_METHODS,
+    methodLogos: data.methodLogos ?? {},
     updatedAt: data.updatedAt ?? Timestamp.now(),
   };
 }
 
-export async function updatePaymentSettings(enabledMethods: string[]): Promise<void> {
+export async function updatePaymentSettings(
+  enabledMethods: string[],
+  methodLogos: Record<string, string> = {}
+): Promise<void> {
   await setDoc(PAYMENT_SETTINGS_DOC, {
     enabledMethods,
+    methodLogos,
     updatedAt: Timestamp.now(),
   });
 }

@@ -53,6 +53,7 @@ export default function MahasiswaTagihanPage() {
   const [methodModalOpen, setMethodModalOpen] = useState(false);
   const [selectedTagihan, setSelectedTagihan] = useState<Tagihan | null>(null);
   const [availableMethods, setAvailableMethods] = useState<PaymentMethodDef[]>([]);
+  const [methodLogos, setMethodLogos] = useState<Record<string, string>>({});
   const [selectedMethodId, setSelectedMethodId] = useState<string>("");
   const [loadingMethods, setLoadingMethods] = useState(false);
 
@@ -165,6 +166,7 @@ export default function MahasiswaTagihanPage() {
       const settings = await getPaymentSettings();
       const enabled = PAYMENT_METHODS.filter((m) => settings.enabledMethods.includes(m.id));
       setAvailableMethods(enabled);
+      setMethodLogos(settings.methodLogos ?? {});
       if (enabled.length === 1) setSelectedMethodId(enabled[0].id);
     } catch (err) {
       console.error("Load payment methods gagal:", err);
@@ -420,7 +422,13 @@ export default function MahasiswaTagihanPage() {
                                 : "bg-white border-slate-200 hover:border-primary-300"
                             }`}
                           >
-                            <div className="text-2xl shrink-0 w-10 text-center">{m.icon}</div>
+                            <div className="w-12 h-12 rounded-xl border border-slate-100 bg-white flex items-center justify-center shrink-0 overflow-hidden">
+                              {methodLogos[m.id] ? (
+                                <img src={methodLogos[m.id]} alt={m.label} className="w-full h-full object-contain" />
+                              ) : (
+                                <span className="text-2xl">{m.icon}</span>
+                              )}
+                            </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-slate-900 text-sm">{m.label}</p>
                               {m.note && (
