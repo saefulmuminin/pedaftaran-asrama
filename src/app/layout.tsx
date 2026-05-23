@@ -87,8 +87,7 @@ export const metadata: Metadata = {
   },
   manifest: "/favicon/site.webmanifest",
   verification: {
-    // Optional — isi kalau punya akun Google Search Console
-    // google: "your-google-verification-code",
+    google: "hvP8a1ZHjV8CRY3rMndLiVWgjwuNRpCAQldREgpYDVA",
   },
 };
 
