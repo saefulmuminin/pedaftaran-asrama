@@ -12,10 +12,6 @@ const API_BASE = isProduction
   ? "https://api.midtrans.com/v2"
   : "https://api.sandbox.midtrans.com/v2";
 
-export const MIDTRANS_SNAP_JS_URL = isProduction
-  ? "https://app.midtrans.com/snap/snap.js"
-  : "https://app.sandbox.midtrans.com/snap/snap.js";
-
 function authHeader(): string {
   return "Basic " + Buffer.from(SERVER_KEY + ":").toString("base64");
 }
