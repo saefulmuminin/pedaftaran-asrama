@@ -1,17 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   CheckCircle, Clock, XCircle, FileText, User,
-  BookOpen, MapPin, Phone, FileImage, ArrowRight, Info, ShieldCheck, Mail, Calendar, GraduationCap
+  FileImage, ShieldCheck, GraduationCap
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getPendaftaranByUser } from "@/lib/firestore";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { formatDate, formatDateTime, cn } from "@/lib/utils";
+import { formatDateTime, cn } from "@/lib/utils";
 import type { Pendaftaran } from "@/types";
 
 export default function StatusPage() {
@@ -44,15 +42,10 @@ export default function StatusPage() {
         <div className="w-24 h-24 bg-slate-50 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-sm">
           <FileText className="w-10 h-10 text-slate-200" />
         </div>
-        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-3">Belum Ada Pendaftaran</h2>
-        <p className="text-slate-500 font-medium leading-relaxed mb-10">
-          Anda belum mengisi formulir pendaftaran asrama. Silakan lengkapi data Anda untuk memulai proses seleksi.
+        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-3">Data Pendaftaran Tidak Tersedia</h2>
+        <p className="text-slate-500 font-medium leading-relaxed">
+          Akun Anda belum tertaut dengan dokumen pendaftaran. Hubungi pengurus asrama untuk verifikasi.
         </p>
-        <Link href="/mahasiswa/pendaftaran">
-          <Button size="lg" className="rounded-2xl font-bold px-10 shadow-premium group">
-            Mulai Pendaftaran <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-          </Button>
-        </Link>
       </div>
     );
   }

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Timestamp } from "firebase/firestore";
 import {
-  UserPlus, Calendar, Clock, User, Phone, Trash2, Filter, Loader2, MessageSquare,
+  UserPlus, Calendar, Clock, User, Phone, Trash2, Filter, Loader2, MessageSquare, Plus, X,
 } from "lucide-react";
 import { createTamu, getAllTamu, deleteTamu } from "@/lib/firestore";
 import { useAuth } from "@/context/AuthContext";
@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import type { Tamu } from "@/types";
+import type { Tamu, TamuItem } from "@/types";
+
+const EMPTY_TAMU: TamuItem = { nama: "", hubungan: "", noHp: "" };
 
 type Range = "today" | "7d" | "30d" | "1y" | "all";
 
@@ -50,10 +52,14 @@ export function BukuTamuPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({
-    namaTamu: "",
-    hubungan: "",
-    noHpTamu: "",
+  const [form, setForm] = useState<{
+    tamus: TamuItem[];
+    untukPenghuni: string;
+    keperluan: string;
+    waktuKedatangan: string;
+    catatan: string;
+  }>({
+    tamus: [{ ...EMPTY_TAMU }],
     untukPenghuni: "",
     keperluan: "",
     waktuKedatangan: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm
@@ -70,38 +76,74 @@ export function BukuTamuPage() {
 
   const filtered = filterByRange(data, range);
 
+  const isAdmin = userProfile?.role === "admin";
+
   const resetForm = () => setForm({
-    namaTamu: "",
-    hubungan: "",
-    noHpTamu: "",
-    untukPenghuni: "",
+    tamus: [{ ...EMPTY_TAMU }],
+    // Auto-isi nama sendiri kalau mahasiswa (tamu biasanya berkunjung ke mereka).
+    // Admin biarkan kosong — mereka bisa lapor untuk penghuni mana saja.
+    untukPenghuni: isAdmin ? "" : (userProfile?.displayName ?? ""),
     keperluan: "",
     waktuKedatangan: new Date().toISOString().slice(0, 16),
     catatan: "",
   });
 
+  const updateTamu = (idx: number, field: keyof TamuItem, value: string) => {
+    setForm((prev) => {
+      const next = [...prev.tamus];
+      next[idx] = { ...next[idx], [field]: value };
+      return { ...prev, tamus: next };
+    });
+  };
+
+  const addTamu = () => {
+    setForm((prev) => ({ ...prev, tamus: [...prev.tamus, { ...EMPTY_TAMU }] }));
+  };
+
+  const removeTamu = (idx: number) => {
+    setForm((prev) => ({
+      ...prev,
+      tamus: prev.tamus.length > 1 ? prev.tamus.filter((_, i) => i !== idx) : prev.tamus,
+    }));
+  };
+
   const handleSubmit = async () => {
     if (!user || !userProfile) return;
-    if (!form.namaTamu.trim() || !form.hubungan.trim() || !form.keperluan.trim()) {
-      error("Nama tamu, hubungan, dan keperluan wajib diisi.");
+    // Validasi: minimal 1 tamu lengkap + keperluan terisi
+    const cleanedTamus: TamuItem[] = form.tamus
+      .map((t) => ({
+        nama: t.nama.trim(),
+        hubungan: t.hubungan.trim(),
+        noHp: t.noHp?.trim() || undefined,
+      }))
+      .filter((t) => t.nama && t.hubungan);
+    if (cleanedTamus.length === 0) {
+      error("Minimal isi 1 tamu (nama + hubungan).");
+      return;
+    }
+    if (!form.keperluan.trim()) {
+      error("Keperluan wajib diisi.");
       return;
     }
     setSaving(true);
     try {
+      const first = cleanedTamus[0];
       await createTamu({
         dilaporOlehUid: user.uid,
         dilaporOlehNama: userProfile.displayName,
         dilaporOlehRole: userProfile.role,
-        namaTamu: form.namaTamu.trim(),
-        hubungan: form.hubungan.trim(),
-        noHpTamu: form.noHpTamu.trim() || undefined,
+        tamus: cleanedTamus,
+        // Legacy fields: di-isi dari tamu pertama untuk backward compat
+        namaTamu: first.nama,
+        hubungan: first.hubungan,
+        noHpTamu: first.noHp,
         untukPenghuni: form.untukPenghuni.trim() || undefined,
         keperluan: form.keperluan.trim(),
         waktuKedatangan: Timestamp.fromDate(new Date(form.waktuKedatangan)),
         catatan: form.catatan.trim() || undefined,
         createdAt: Timestamp.now(),
       });
-      success("Tamu berhasil dicatat.");
+      success(`${cleanedTamus.length} tamu berhasil dicatat.`);
       setFormOpen(false);
       resetForm();
       await load();
@@ -125,8 +167,6 @@ export function BukuTamuPage() {
     }
   };
 
-  const isAdmin = userProfile?.role === "admin";
-
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-bottom duration-700 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -140,7 +180,7 @@ export function BukuTamuPage() {
           size="md"
           className="rounded-2xl font-bold"
           icon={<UserPlus className="w-5 h-5" />}
-          onClick={() => setFormOpen(true)}
+          onClick={() => { resetForm(); setFormOpen(true); }}
         >
           Lapor Tamu
         </Button>
@@ -189,54 +229,105 @@ export function BukuTamuPage() {
           {filtered.map((t) => (
             <Card key={t.id} className="p-5 md:p-6 border-none shadow-sm rounded-[2rem] bg-white">
               <div className="flex items-start gap-4">
-                <div className="w-11 h-11 bg-primary-100 rounded-2xl flex items-center justify-center font-black text-primary-700 shrink-0">
-                  {t.namaTamu.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                      <h3 className="text-base font-extrabold text-slate-900">{t.namaTamu}</h3>
-                      <p className="text-xs text-slate-500 font-medium">
-                        {t.hubungan}
-                        {t.untukPenghuni && ` · untuk ${t.untukPenghuni}`}
-                      </p>
-                    </div>
-                    {isAdmin && (
-                      <button
-                        onClick={() => handleDelete(t.id)}
-                        className="p-2 rounded-xl text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                        title="Hapus"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-500 font-medium flex-wrap">
-                    <span className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {t.waktuKedatangan.toDate().toLocaleString("id-ID", {
-                        day: "numeric", month: "short", year: "numeric",
-                        hour: "2-digit", minute: "2-digit",
-                      })}
-                    </span>
-                    {t.noHpTamu && (
-                      <span className="flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5" />
-                        {t.noHpTamu}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-700 font-medium flex items-start gap-2 pt-1">
-                    <MessageSquare className="w-3.5 h-3.5 text-slate-400 mt-1 shrink-0" />
-                    {t.keperluan}
-                  </p>
-                  {t.catatan && (
-                    <p className="text-xs text-slate-500 italic">&ldquo;{t.catatan}&rdquo;</p>
-                  )}
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider pt-1">
-                    Dilapor oleh: {t.dilaporOlehNama} ({t.dilaporOlehRole})
-                  </p>
-                </div>
+                {(() => {
+                  // Pakai tamus array kalau ada; fallback ke legacy single
+                  const tamuList: TamuItem[] = (t.tamus && t.tamus.length > 0)
+                    ? t.tamus
+                    : [{ nama: t.namaTamu, hubungan: t.hubungan, noHp: t.noHpTamu }];
+                  const first = tamuList[0];
+                  const moreCount = tamuList.length - 1;
+                  return (
+                    <>
+                      <div className="w-11 h-11 bg-primary-100 rounded-2xl flex items-center justify-center font-black text-primary-700 shrink-0 relative">
+                        {first.nama.charAt(0).toUpperCase()}
+                        {moreCount > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white">
+                            +{moreCount}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div>
+                            <h3 className="text-base font-extrabold text-slate-900">
+                              {first.nama}
+                              {moreCount > 0 && (
+                                <span className="text-xs font-bold text-slate-500 ml-2">
+                                  + {moreCount} tamu lain
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-xs text-slate-500 font-medium">
+                              {first.hubungan}
+                              {t.untukPenghuni && ` · untuk ${t.untukPenghuni}`}
+                            </p>
+                          </div>
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleDelete(t.id)}
+                              className="p-2 rounded-xl text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                              title="Hapus"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {moreCount > 0 && (
+                          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                              Daftar Tamu ({tamuList.length})
+                            </p>
+                            <ul className="space-y-1">
+                              {tamuList.map((g, idx) => (
+                                <li key={idx} className="text-xs font-medium text-slate-700 flex items-center gap-2">
+                                  <span className="w-5 h-5 bg-white border border-slate-200 rounded-md flex items-center justify-center text-[9px] font-black text-slate-500 shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="font-bold">{g.nama}</span>
+                                  <span className="text-slate-400">·</span>
+                                  <span>{g.hubungan}</span>
+                                  {g.noHp && (
+                                    <>
+                                      <span className="text-slate-400">·</span>
+                                      <span className="text-slate-500">{g.noHp}</span>
+                                    </>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4 text-xs text-slate-500 font-medium flex-wrap">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {t.waktuKedatangan.toDate().toLocaleString("id-ID", {
+                              day: "numeric", month: "short", year: "numeric",
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </span>
+                          {moreCount === 0 && first.noHp && (
+                            <span className="flex items-center gap-1.5">
+                              <Phone className="w-3.5 h-3.5" />
+                              {first.noHp}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-700 font-medium flex items-start gap-2 pt-1">
+                          <MessageSquare className="w-3.5 h-3.5 text-slate-400 mt-1 shrink-0" />
+                          {t.keperluan}
+                        </p>
+                        {t.catatan && (
+                          <p className="text-xs text-slate-500 italic">&ldquo;{t.catatan}&rdquo;</p>
+                        )}
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider pt-1">
+                          Dilapor oleh: {t.dilaporOlehNama} ({t.dilaporOlehRole})
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </Card>
           ))}
@@ -251,35 +342,82 @@ export function BukuTamuPage() {
         size="md"
       >
         <div className="space-y-4">
-          <Input
-            label="Nama Tamu"
-            placeholder="Nama lengkap tamu"
-            required
-            value={form.namaTamu}
-            onChange={(e) => setForm({ ...form, namaTamu: e.target.value })}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Hubungan"
-              placeholder="Teman / Keluarga / Dosen"
-              required
-              value={form.hubungan}
-              onChange={(e) => setForm({ ...form, hubungan: e.target.value })}
-            />
-            <Input
-              label="No. HP Tamu (opsional)"
-              type="tel"
-              placeholder="08xx..."
-              value={form.noHpTamu}
-              onChange={(e) => setForm({ ...form, noHpTamu: e.target.value })}
-            />
+          {/* Daftar Tamu — bisa lebih dari satu */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Daftar Tamu <span className="text-primary-600">*</span>
+              </label>
+              <span className="text-[10px] font-bold text-slate-400">
+                {form.tamus.length} {form.tamus.length === 1 ? "tamu" : "tamu"}
+              </span>
+            </div>
+            {form.tamus.map((t, idx) => (
+              <div
+                key={idx}
+                className="p-4 rounded-2xl border-2 border-slate-100 bg-slate-50/50 space-y-3 relative"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest">
+                    Tamu #{idx + 1}
+                  </span>
+                  {form.tamus.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeTamu(idx)}
+                      className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                      title="Hapus tamu ini"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <Input
+                  label="Nama"
+                  placeholder="Nama lengkap tamu"
+                  required
+                  value={t.nama}
+                  onChange={(e) => updateTamu(idx, "nama", e.target.value)}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Hubungan"
+                    placeholder="Teman / Keluarga"
+                    required
+                    value={t.hubungan}
+                    onChange={(e) => updateTamu(idx, "hubungan", e.target.value)}
+                  />
+                  <Input
+                    label="No. HP"
+                    type="tel"
+                    placeholder="08xx..."
+                    value={t.noHp ?? ""}
+                    onChange={(e) => updateTamu(idx, "noHp", e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full rounded-2xl font-bold border-dashed border-2 border-slate-200 text-slate-600 hover:border-primary-400 hover:text-primary-700"
+              icon={<Plus className="w-4 h-4" />}
+              onClick={addTamu}
+            >
+              Tambah Tamu Lagi
+            </Button>
           </div>
-          <Input
-            label="Untuk Penghuni (opsional)"
-            placeholder="Nama penghuni yang dikunjungi"
-            value={form.untukPenghuni}
-            onChange={(e) => setForm({ ...form, untukPenghuni: e.target.value })}
-          />
+          {/* Untuk Penghuni — hanya tampil di admin (admin perlu pilih penghuni).
+              Mahasiswa otomatis ter-isi nama sendiri di handleSubmit, tidak perlu UI. */}
+          {isAdmin && (
+            <Input
+              label="Untuk Penghuni (opsional)"
+              placeholder="Nama penghuni yang dikunjungi"
+              value={form.untukPenghuni}
+              onChange={(e) => setForm({ ...form, untukPenghuni: e.target.value })}
+            />
+          )}
           <div>
             <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
               Keperluan <span className="text-red-500">*</span>

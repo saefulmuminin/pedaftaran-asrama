@@ -19,7 +19,7 @@ import { getDocs, collection, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Input, Select, TextArea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import type { Tagihan, StatusTagihan, Penghuni } from "@/types";
@@ -32,15 +32,20 @@ const STATUS_LABEL: Record<StatusTagihan, { label: string; color: string }> = {
   cancelled: { label: "Dibatalkan", color: "bg-rose-50 text-rose-700 border-rose-200" },
 };
 
-/** Periode opts: 6 bulan lalu + bulan sekarang + 6 bulan ke depan */
-function buildPeriodeOptions(): string[] {
-  const opts: string[] = [];
+/** Quick chip periodes — bulan sekarang ± 2 bulan untuk shortcut. */
+function buildQuickPeriodes(): { value: string; label: string }[] {
   const now = new Date();
-  for (let i = -6; i <= 12; i++) {
+  const arr: { value: string; label: string }[] = [];
+  for (let i = -2; i <= 2; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    opts.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const bulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+    arr.push({
+      value,
+      label: `${bulan[d.getMonth()]} ${d.getFullYear()}`,
+    });
   }
-  return opts.reverse(); // future first
+  return arr;
 }
 
 export default function AdminTagihanPage() {
@@ -73,7 +78,8 @@ export default function AdminTagihanPage() {
     catatan: "",
   });
 
-  const periodeOptions = buildPeriodeOptions();
+  const quickPeriodes = buildQuickPeriodes();
+  const currentPeriode = getCurrentPeriode();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -251,52 +257,70 @@ export default function AdminTagihanPage() {
 
       {/* Filters */}
       <Card className="p-3 bg-white/80 backdrop-blur-md border-none shadow-sm rounded-[2rem]">
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 rounded-2xl flex-1">
-            <Wallet className="w-4 h-4 text-primary-600" />
-            <select
-              value={periode}
-              onChange={(e) => setPeriode(e.target.value)}
-              className="flex-1 bg-transparent text-sm font-bold text-slate-700 focus:outline-none"
-            >
-              {periodeOptions.map((p) => {
-                const isCurrent = p === getCurrentPeriode();
-                const isFuture = p > getCurrentPeriode();
-                return (
-                  <option key={p} value={p}>
-                    {formatPeriode(p)}
-                    {isCurrent ? " · Bulan Ini" : isFuture ? " · Mendatang" : ""}
-                  </option>
-                );
-              })}
-            </select>
+        <div className="flex flex-col gap-3">
+          {/* Periode + status filter (sejajar) */}
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 rounded-2xl flex-1">
+              <Wallet className="w-4 h-4 text-primary-600 shrink-0" />
+              <input
+                type="month"
+                value={periode}
+                onChange={(e) => setPeriode(e.target.value)}
+                className="flex-1 bg-transparent text-sm font-bold text-slate-700 focus:outline-none cursor-pointer"
+              />
+              <span className="text-xs font-bold text-primary-600 whitespace-nowrap hidden sm:block">
+                {formatPeriode(periode)}
+                {periode === currentPeriode && " · Bulan Ini"}
+                {periode > currentPeriode && " · Mendatang"}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 rounded-2xl">
+              <Filter className="w-4 h-4 text-primary-600" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                className="bg-transparent text-sm font-bold text-slate-700 focus:outline-none min-w-[160px]"
+              >
+                <option value="semua">Semua Status</option>
+                <option value="unpaid">Belum Bayar</option>
+                <option value="pending">Pending</option>
+                <option value="lunas">Lunas</option>
+                <option value="expired">Expired</option>
+                <option value="cancelled">Dibatalkan</option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-3 px-5 py-3 bg-slate-50 rounded-2xl">
-            <Filter className="w-4 h-4 text-primary-600" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="bg-transparent text-sm font-bold text-slate-700 focus:outline-none min-w-[160px]"
-            >
-              <option value="semua">Semua Status</option>
-              <option value="unpaid">Belum Bayar</option>
-              <option value="pending">Pending</option>
-              <option value="lunas">Lunas</option>
-              <option value="expired">Expired</option>
-              <option value="cancelled">Dibatalkan</option>
-            </select>
+
+          {/* Quick chips periode */}
+          <div className="flex items-center gap-2 px-3 pb-1 overflow-x-auto">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Cepat:</span>
+            {quickPeriodes.map((q) => (
+              <button
+                key={q.value}
+                onClick={() => setPeriode(q.value)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                  periode === q.value
+                    ? "bg-primary-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {q.label}
+              </button>
+            ))}
           </div>
         </div>
       </Card>
 
-      {/* Table */}
-      <Card className="overflow-hidden border-none shadow-premium bg-white/50 backdrop-blur-md rounded-[2.5rem]">
-        {loading ? (
+      {/* Grouped list by penghuni */}
+      {loading ? (
+        <Card className="border-none shadow-sm rounded-[2.5rem] bg-white">
           <div className="flex flex-col items-center justify-center py-24 gap-4">
             <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin shadow-sm" />
             <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Memuat Tagihan...</p>
           </div>
-        ) : filtered.length === 0 ? (
+        </Card>
+      ) : filtered.length === 0 ? (
+        <Card className="border-none shadow-sm rounded-[2.5rem] bg-white">
           <div className="text-center py-24 px-8">
             <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
               <Wallet className="w-10 h-10 text-slate-200" />
@@ -307,80 +331,130 @@ export default function AdminTagihanPage() {
               &ldquo;Tagihan Custom&rdquo; untuk satu penghuni.
             </p>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[10px] text-slate-400 font-black uppercase tracking-[0.15em] bg-slate-50/50 border-b border-slate-100">
-                  <th className="px-8 py-5">Penghuni</th>
-                  <th className="px-6 py-5">Judul</th>
-                  <th className="px-6 py-5">Kamar</th>
-                  <th className="px-6 py-5 text-right">Jumlah</th>
-                  <th className="px-6 py-5 text-center">Status</th>
-                  <th className="px-6 py-5">Dibayar</th>
-                  <th className="px-6 py-5 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((t) => {
-                  const meta = STATUS_LABEL[t.status];
-                  return (
-                    <tr key={t.id} className="hover:bg-primary-50/20 transition-colors">
-                      <td className="px-8 py-5">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-primary-100 rounded-xl flex items-center justify-center font-black text-primary-700 shadow-sm text-sm shrink-0">
-                            {t.namaLengkap.charAt(0).toUpperCase()}
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {(() => {
+            // Group by penghuniId, preserve order
+            const groups = new Map<string, { namaLengkap: string; nomorKamar: string; items: Tagihan[] }>();
+            for (const t of filtered) {
+              const g = groups.get(t.penghuniId);
+              if (g) g.items.push(t);
+              else groups.set(t.penghuniId, {
+                namaLengkap: t.namaLengkap,
+                nomorKamar: t.nomorKamar,
+                items: [t],
+              });
+            }
+            const groupedArr = Array.from(groups.entries()).sort((a, b) =>
+              a[1].namaLengkap.localeCompare(b[1].namaLengkap)
+            );
+
+            return groupedArr.map(([penghuniId, group]) => {
+              const totalGroup = group.items.reduce((s, t) => s + t.jumlah, 0);
+              const lunasCount = group.items.filter((t) => t.status === "lunas").length;
+              const totalCount = group.items.length;
+              const allLunas = lunasCount === totalCount;
+              const someLunas = lunasCount > 0 && !allLunas;
+
+              return (
+                <Card
+                  key={penghuniId}
+                  className="overflow-hidden border-none shadow-sm rounded-[2rem] bg-white"
+                >
+                  {/* Penghuni header */}
+                  <div className="px-6 py-4 bg-slate-50/60 border-b border-slate-100 flex items-center gap-4 flex-wrap">
+                    <div className="w-11 h-11 bg-primary-100 rounded-2xl flex items-center justify-center font-black text-primary-700 shadow-sm shrink-0">
+                      {group.namaLengkap.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-extrabold text-slate-900 tracking-tight truncate">
+                        {group.namaLengkap}
+                      </h3>
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-500 mt-0.5">
+                        <span className="bg-slate-100 px-2 py-0.5 rounded-md">Kamar {group.nomorKamar}</span>
+                        <span>·</span>
+                        <span>{totalCount} tagihan</span>
+                        {allLunas && (
+                          <span className="inline-flex items-center gap-1 text-emerald-600">
+                            <CheckCircle className="w-3 h-3" /> Lunas semua
+                          </span>
+                        )}
+                        {someLunas && (
+                          <span className="text-amber-600">
+                            {lunasCount}/{totalCount} lunas
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subtotal</p>
+                      <p className="text-lg font-black text-slate-900">
+                        Rp {totalGroup.toLocaleString("id-ID")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tagihan items */}
+                  <ul className="divide-y divide-slate-50">
+                    {group.items.map((t) => {
+                      const meta = STATUS_LABEL[t.status];
+                      return (
+                        <li
+                          key={t.id}
+                          className="flex items-center gap-4 px-6 py-3.5 hover:bg-primary-50/20 transition-colors group/item"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-slate-800 text-sm">{t.judul ?? "Iuran Bulanan"}</p>
+                            {t.catatan && (
+                              <p className="text-[11px] text-slate-500 mt-0.5">{t.catatan}</p>
+                            )}
+                            {t.paidAt && (
+                              <p className="text-[10px] text-emerald-600 font-bold mt-0.5">
+                                Dibayar {new Date(t.paidAt.seconds * 1000).toLocaleDateString("id-ID", {
+                                  day: "numeric", month: "short", year: "numeric",
+                                })}
+                              </p>
+                            )}
                           </div>
-                          <span className="font-bold text-slate-900">{t.namaLengkap}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        <p className="font-bold text-slate-800">{t.judul ?? "Iuran Bulanan"}</p>
-                        {t.catatan && (
-                          <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{t.catatan}</p>
-                        )}
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className="font-bold text-slate-600 text-xs bg-slate-100 px-2.5 py-1 rounded-lg">
-                          {t.nomorKamar}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-right font-extrabold text-slate-900">
-                        Rp {t.jumlah.toLocaleString("id-ID")}
-                      </td>
-                      <td className="px-6 py-5 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.color}`}>
-                          {t.status === "lunas" ? <CheckCircle className="w-3 h-3" /> :
-                            t.status === "pending" ? <Clock className="w-3 h-3" /> :
-                            t.status === "unpaid" ? <AlertTriangle className="w-3 h-3" /> :
-                            <XCircle className="w-3 h-3" />}
-                          {meta.label}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-xs text-slate-500 font-medium">
-                        {t.paidAt ? new Date(t.paidAt.seconds * 1000).toLocaleDateString("id-ID", {
-                          day: "numeric", month: "short", year: "numeric",
-                        }) : "—"}
-                      </td>
-                      <td className="px-6 py-5 text-center">
-                        {t.status !== "lunas" && (
-                          <button
-                            onClick={() => handleDelete(t)}
-                            className="p-2 rounded-xl text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                            title="Hapus"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+
+                          <div className="text-right shrink-0 w-28">
+                            <p className="font-extrabold text-slate-900 text-sm">
+                              Rp {t.jumlah.toLocaleString("id-ID")}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.color}`}>
+                              {t.status === "lunas" ? <CheckCircle className="w-3 h-3" /> :
+                                t.status === "pending" ? <Clock className="w-3 h-3" /> :
+                                t.status === "unpaid" ? <AlertTriangle className="w-3 h-3" /> :
+                                <XCircle className="w-3 h-3" />}
+                              {meta.label}
+                            </span>
+                          </div>
+
+                          <div className="shrink-0 w-9">
+                            {t.status !== "lunas" && (
+                              <button
+                                onClick={() => handleDelete(t)}
+                                className="p-2 rounded-xl text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition opacity-60 group-hover/item:opacity-100"
+                                title="Hapus tagihan"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </Card>
+              );
+            });
+          })()}
+        </div>
+      )}
 
       {/* Generate Bulk Modal */}
       <Modal
@@ -389,35 +463,30 @@ export default function AdminTagihanPage() {
         title="Generate Tagihan Bulk"
         size="md"
       >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600 leading-relaxed">
-            Akan dibuat tagihan untuk <span className="font-bold">semua penghuni aktif</span> pada periode terpilih.
-            Penghuni yang sudah punya tagihan <span className="font-bold">judul yang sama</span> di periode tsb akan di-skip.
-          </p>
-
-          <div>
-            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-              Periode <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={genForm.periode}
-              onChange={(e) => setGenForm({ ...genForm, periode: e.target.value })}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:border-primary-400"
-            >
-              {periodeOptions.map((p) => (
-                <option key={p} value={p}>{formatPeriode(p)}</option>
-              ))}
-            </select>
-            {genForm.periode > getCurrentPeriode() && (
-              <p className="text-xs text-amber-600 font-bold mt-1.5">
-                ⚠ Periode ini belum aktif — tagihan tidak akan muncul di mahasiswa sampai bulan tersebut tiba.
-              </p>
-            )}
+        <div className="space-y-5">
+          <div className="p-4 rounded-2xl bg-primary-50 border border-primary-100 text-xs text-primary-800 font-medium leading-relaxed">
+            Akan dibuat tagihan untuk <b>semua penghuni aktif</b> pada periode terpilih.
+            Penghuni yang sudah punya tagihan <b>judul yang sama</b> di periode tsb akan di-skip.
           </div>
 
           <Input
+            label="Periode"
+            type="month"
+            value={genForm.periode}
+            onChange={(e) => setGenForm({ ...genForm, periode: e.target.value })}
+            helperText={`${formatPeriode(genForm.periode)}${genForm.periode === currentPeriode ? " · Bulan ini" : ""}`}
+            required
+          />
+          {genForm.periode > currentPeriode && (
+            <div className="-mt-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-100 text-xs text-amber-700 font-bold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Periode mendatang — tagihan baru muncul di mahasiswa saat bulan tsb tiba.
+            </div>
+          )}
+
+          <Input
             label="Judul Tagihan"
-            placeholder="Iuran Bulanan / Iuran Renovasi / dll"
+            placeholder="Iuran Bulanan / Iuran Renovasi / Patungan Cat ..."
             value={genForm.judul}
             onChange={(e) => setGenForm({ ...genForm, judul: e.target.value })}
             required
@@ -427,25 +496,22 @@ export default function AdminTagihanPage() {
             label="Nominal (Rp)"
             type="number"
             min={1}
-            value={genForm.jumlah}
+            placeholder="70000"
+            value={genForm.jumlah || ""}
             onChange={(e) => setGenForm({ ...genForm, jumlah: parseInt(e.target.value, 10) || 0 })}
+            helperText={genForm.jumlah > 0 ? `Rp ${genForm.jumlah.toLocaleString("id-ID")}` : undefined}
             required
           />
 
-          <div>
-            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-              Catatan (opsional)
-            </label>
-            <textarea
-              rows={2}
-              value={genForm.catatan}
-              onChange={(e) => setGenForm({ ...genForm, catatan: e.target.value })}
-              placeholder="Catatan tambahan untuk semua tagihan ini..."
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 focus:outline-none focus:border-primary-400 focus:bg-white transition-all resize-none"
-            />
-          </div>
+          <TextArea
+            label="Catatan (opsional)"
+            rows={2}
+            placeholder="Catatan tambahan untuk semua tagihan ini..."
+            value={genForm.catatan}
+            onChange={(e) => setGenForm({ ...genForm, catatan: e.target.value })}
+          />
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-3 border-t border-slate-100">
             <Button
               variant="outline"
               className="flex-1 rounded-2xl font-bold border-slate-200"
@@ -456,6 +522,7 @@ export default function AdminTagihanPage() {
             </Button>
             <Button
               className="flex-1 rounded-2xl font-bold"
+              icon={<Plus className="w-5 h-5" />}
               onClick={handleGenerate}
               loading={generating}
             >
@@ -472,43 +539,30 @@ export default function AdminTagihanPage() {
         title="Buat Tagihan Custom"
         size="md"
       >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600 leading-relaxed">
-            Buat tagihan untuk <span className="font-bold">satu penghuni</span> dengan judul & nominal custom — cocok untuk denda, iuran khusus, dll.
-          </p>
-
-          <div>
-            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-              Penghuni <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={customForm.penghuniId}
-              onChange={(e) => setCustomForm({ ...customForm, penghuniId: e.target.value })}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:border-primary-400"
-            >
-              <option value="">— Pilih Penghuni —</option>
-              {penghuniList.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.namaLengkap} (Kamar {p.nomorKamar})
-                </option>
-              ))}
-            </select>
+        <div className="space-y-5">
+          <div className="p-4 rounded-2xl bg-primary-50 border border-primary-100 text-xs text-primary-800 font-medium leading-relaxed">
+            Buat tagihan untuk <b>satu penghuni</b> dengan judul & nominal custom — cocok untuk denda, iuran khusus, dll.
           </div>
 
-          <div>
-            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-              Periode <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={customForm.periode}
-              onChange={(e) => setCustomForm({ ...customForm, periode: e.target.value })}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:border-primary-400"
-            >
-              {periodeOptions.map((p) => (
-                <option key={p} value={p}>{formatPeriode(p)}</option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Penghuni"
+            value={customForm.penghuniId}
+            onChange={(e) => setCustomForm({ ...customForm, penghuniId: e.target.value })}
+            options={penghuniList.map((p) => ({
+              value: p.id,
+              label: `${p.namaLengkap} (Kamar ${p.nomorKamar})`,
+            }))}
+            required
+          />
+
+          <Input
+            label="Periode"
+            type="month"
+            value={customForm.periode}
+            onChange={(e) => setCustomForm({ ...customForm, periode: e.target.value })}
+            helperText={formatPeriode(customForm.periode)}
+            required
+          />
 
           <Input
             label="Judul Tagihan"
@@ -522,25 +576,22 @@ export default function AdminTagihanPage() {
             label="Nominal (Rp)"
             type="number"
             min={1}
+            placeholder="50000"
             value={customForm.jumlah || ""}
             onChange={(e) => setCustomForm({ ...customForm, jumlah: parseInt(e.target.value, 10) || 0 })}
+            helperText={customForm.jumlah > 0 ? `Rp ${customForm.jumlah.toLocaleString("id-ID")}` : undefined}
             required
           />
 
-          <div>
-            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-              Catatan (opsional)
-            </label>
-            <textarea
-              rows={2}
-              value={customForm.catatan}
-              onChange={(e) => setCustomForm({ ...customForm, catatan: e.target.value })}
-              placeholder="Catatan untuk penghuni..."
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 focus:outline-none focus:border-primary-400 focus:bg-white transition-all resize-none"
-            />
-          </div>
+          <TextArea
+            label="Catatan (opsional)"
+            rows={2}
+            placeholder="Catatan untuk penghuni..."
+            value={customForm.catatan}
+            onChange={(e) => setCustomForm({ ...customForm, catatan: e.target.value })}
+          />
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-3 border-t border-slate-100">
             <Button
               variant="outline"
               className="flex-1 rounded-2xl font-bold border-slate-200"
@@ -551,6 +602,7 @@ export default function AdminTagihanPage() {
             </Button>
             <Button
               className="flex-1 rounded-2xl font-bold"
+              icon={<UserPlus className="w-5 h-5" />}
               onClick={handleCustom}
               loading={savingCustom}
             >

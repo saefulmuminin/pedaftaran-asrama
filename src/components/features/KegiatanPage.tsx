@@ -3,10 +3,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Timestamp } from "firebase/firestore";
 import {
-  Plus, Calendar, MapPin, Megaphone, Users, ClipboardList, Trash2,
-  Loader2, CheckCircle, Pin, Filter,
+  Plus, Calendar, MapPin, Megaphone, Users, Trash2,
+  Loader2, Pin, Filter, Sparkles,
 } from "lucide-react";
-import { createKegiatan, getAllKegiatan, deleteKegiatan, updateKegiatan } from "@/lib/firestore";
+import { createKegiatan, getAllKegiatan, deleteKegiatan } from "@/lib/firestore";
+import { seedKegiatanDemo } from "@/lib/seed";
 import { useAuth } from "@/context/AuthContext";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -18,7 +19,6 @@ import type { Kegiatan, KategoriKegiatan } from "@/types";
 const KATEGORI_META: Record<KategoriKegiatan, { label: string; color: string; Icon: React.ElementType }> = {
   komunitas: { label: "Komunitas", color: "bg-sky-50 text-sky-700 border-sky-200", Icon: Users },
   wajib: { label: "Wajib", color: "bg-rose-50 text-rose-700 border-rose-200", Icon: Megaphone },
-  laporan: { label: "Laporan", color: "bg-amber-50 text-amber-700 border-amber-200", Icon: ClipboardList },
 };
 
 export function KegiatanPage() {
@@ -43,9 +43,19 @@ export function KegiatanPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setData(await getAllKegiatan());
+    if (isAdmin && user?.uid && userProfile?.displayName) {
+      try {
+        await seedKegiatanDemo(user.uid, userProfile.displayName);
+      } catch (e) {
+        console.error("Auto seed failed", e);
+      }
+    }
+    const all = await getAllKegiatan();
+    // Filter ke kategori yang dikenal — skip data lama dengan kategori "laporan"
+    // yang sudah dipindah ke koleksi Laporan terpisah.
+    setData(all.filter((k) => k.kategori in KATEGORI_META));
     setLoading(false);
-  }, []);
+  }, [isAdmin, user, userProfile]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -121,21 +131,6 @@ export function KegiatanPage() {
     }
   };
 
-  const handleTanggapiLaporan = async (k: Kegiatan) => {
-    const catatan = prompt(`Tanggapi laporan "${k.judul}":`, k.catatanAdmin ?? "");
-    if (catatan === null) return;
-    try {
-      await updateKegiatan(k.id, {
-        ditanggapiAdmin: true,
-        catatanAdmin: catatan.trim(),
-      });
-      success("Tanggapan tersimpan.");
-      await load();
-    } catch (err) {
-      console.error(err);
-      error("Gagal menyimpan tanggapan.");
-    }
-  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-bottom duration-700 pb-20">
@@ -148,14 +143,17 @@ export function KegiatanPage() {
               : "Buat kegiatan komunitas atau laporkan kegiatan asrama ke pengurus."}
           </p>
         </div>
-        <Button
-          size="md"
-          className="rounded-2xl font-bold"
-          icon={<Plus className="w-5 h-5" />}
-          onClick={openForm}
-        >
-          Buat Kegiatan
-        </Button>
+        <div className="flex items-center gap-3 flex-wrap">
+
+          <Button
+            size="md"
+            className="rounded-2xl font-bold"
+            icon={<Plus className="w-5 h-5" />}
+            onClick={openForm}
+          >
+            Buat Kegiatan
+          </Button>
+        </div>
       </div>
 
       {/* Filter */}
@@ -211,7 +209,6 @@ export function KegiatanPage() {
             const meta = KATEGORI_META[k.kategori];
             const Icon = meta.Icon;
             const canDelete = isAdmin || k.dibuatOlehUid === user?.uid;
-            const showAdminTanggap = isAdmin && k.kategori === "laporan";
             return (
               <Card key={k.id} className="p-5 md:p-6 border-none shadow-sm rounded-[2rem] bg-white">
                 <div className="flex items-start gap-4">
@@ -266,29 +263,6 @@ export function KegiatanPage() {
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider pt-1">
                       Oleh: {k.dibuatOlehNama} ({k.dibuatOlehRole})
                     </p>
-
-                    {k.ditanggapiAdmin && k.catatanAdmin && (
-                      <div className="mt-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-100 flex gap-2">
-                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
-                            Tanggapan Admin
-                          </p>
-                          <p className="text-xs font-medium text-emerald-800 mt-0.5">{k.catatanAdmin}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {showAdminTanggap && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-xl font-bold mt-2"
-                        onClick={() => handleTanggapiLaporan(k)}
-                      >
-                        {k.ditanggapiAdmin ? "Edit Tanggapan" : "Tanggapi"}
-                      </Button>
-                    )}
                   </div>
                 </div>
               </Card>

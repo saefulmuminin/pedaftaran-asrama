@@ -27,6 +27,8 @@ import type {
   Tamu,
   Kegiatan,
   KategoriKegiatan,
+  Laporan,
+  StatusLaporan,
   TataTertibItem,
   KategoriTataTertib,
   PaymentSettings,
@@ -203,6 +205,16 @@ export async function deleteKamar(id: string): Promise<void> {
 }
 
 // --- PENGHUNI ---
+export async function getPenghuniByUser(userId: string): Promise<Penghuni | null> {
+  const snap = await getDocs(
+    query(collection(db, "penghuni"), where("userId", "==", userId))
+  );
+  if (snap.empty) return null;
+  // Ambil yang status aktif kalau ada
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Penghuni));
+  return docs.find((p) => p.status === "aktif") ?? docs[0];
+}
+
 export async function getAllPenghuni(): Promise<Penghuni[]> {
   // Filter aktif, sort client-side — tidak butuh composite index
   const snap = await getDocs(
@@ -598,6 +610,41 @@ export async function updateKegiatan(
 
 export async function deleteKegiatan(id: string): Promise<void> {
   await deleteDoc(doc(db, "kegiatan", id));
+}
+
+// --- LAPORAN ---
+export async function createLaporan(data: Omit<Laporan, "id">): Promise<string> {
+  const ref = await addDoc(collection(db, "laporan"), data);
+  return ref.id;
+}
+
+export async function getAllLaporan(statusFilter?: StatusLaporan): Promise<Laporan[]> {
+  const snap = await getDocs(collection(db, "laporan"));
+  let list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Laporan));
+  if (statusFilter) list = list.filter((l) => l.status === statusFilter);
+  return list.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
+}
+
+export async function getLaporanByUser(userId: string): Promise<Laporan[]> {
+  const q = query(collection(db, "laporan"), where("pelaporUid", "==", userId));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Laporan))
+    .sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
+}
+
+export async function updateLaporan(
+  id: string,
+  data: Partial<Omit<Laporan, "id" | "createdAt">>
+): Promise<void> {
+  await updateDoc(doc(db, "laporan", id), {
+    ...data,
+    updatedAt: Timestamp.now(),
+  });
+}
+
+export async function deleteLaporan(id: string): Promise<void> {
+  await deleteDoc(doc(db, "laporan", id));
 }
 
 // --- DASHBOARD STATS ---

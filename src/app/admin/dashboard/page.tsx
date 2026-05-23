@@ -6,8 +6,13 @@ import {
   Users, FileText, CheckCircle, XCircle, Clock, DoorOpen,
   Home, TrendingUp, ArrowRight, ChevronDown, Database, Sparkles, AlertTriangle
 } from "lucide-react";
-import { getDashboardStats, getAllPendaftaran } from "@/lib/firestore";
-import { seedAsramaData, type SeedProgress, type SeedResult } from "@/lib/seed";
+import { getDashboardStats, getAllPendaftaran, seedDefaultTataTertib } from "@/lib/firestore";
+import {
+  seedAsramaData, seedKegiatanDemo, seedLaporanDemo,
+  type SeedProgress, type SeedResult,
+} from "@/lib/seed";
+import { useAuth } from "@/context/AuthContext";
+import { TamuTerbaruWidget } from "@/components/features/TamuTerbaruWidget";
 import { StatCard } from "@/components/ui/Card";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -27,6 +32,7 @@ const FIREBASE_CONFIG = {
 };
 
 export default function AdminDashboard() {
+  const { user, userProfile } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recent, setRecent] = useState<Pendaftaran[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,10 +64,54 @@ export default function AdminDashboard() {
     setSeedResult(null);
     setSeedProgress(null);
     try {
+      // 1. Seed inti: kamar + akun mahasiswa + pendaftaran + penghuni
       const result = await seedAsramaData(FIREBASE_CONFIG, (p) => setSeedProgress(p));
-      setSeedResult(result);
+
+      // 2. Seed konten dummy: tata tertib, kegiatan, laporan (best-effort, tidak menghentikan kalau salah satu gagal)
+      let tataTertibCreated = 0;
+      let kegiatanCreated = 0;
+      let laporanCreated = 0;
+      const adminUid = user?.uid;
+      const adminNama = userProfile?.displayName ?? "Admin";
+
+      try {
+        setSeedProgress({ step: "Seed tata tertib default", current: 0, total: 1 });
+        const tt = await seedDefaultTataTertib();
+        tataTertibCreated = tt.created;
+      } catch (err) {
+        console.warn("Seed tata tertib gagal:", err);
+      }
+
+      if (adminUid) {
+        try {
+          setSeedProgress({ step: "Seed kegiatan demo", current: 0, total: 1 });
+          const k = await seedKegiatanDemo(adminUid, adminNama);
+          kegiatanCreated = k.created;
+        } catch (err) {
+          console.warn("Seed kegiatan gagal:", err);
+        }
+
+        try {
+          setSeedProgress({ step: "Seed laporan demo", current: 0, total: 1 });
+          const l = await seedLaporanDemo(adminUid, adminNama, undefined, adminUid, adminNama);
+          laporanCreated = l.created;
+        } catch (err) {
+          console.warn("Seed laporan gagal:", err);
+        }
+      }
+
+      const extended: SeedResult & {
+        tataTertibCreated?: number;
+        kegiatanCreated?: number;
+        laporanCreated?: number;
+      } = { ...result, tataTertibCreated, kegiatanCreated, laporanCreated };
+      setSeedResult(extended);
+
       if (result.errors.length === 0) {
-        success(`Seed selesai: ${result.mahasiswaDibuat} mahasiswa, ${result.kamarDibuat} kamar baru.`);
+        success(
+          `Seed selesai: ${result.mahasiswaDibuat} mahasiswa, ${result.kamarDibuat} kamar, ` +
+          `${tataTertibCreated} tata tertib, ${kegiatanCreated} kegiatan, ${laporanCreated} laporan.`
+        );
       } else {
         error(`Seed selesai dengan ${result.errors.length} error.`);
       }
@@ -135,6 +185,9 @@ export default function AdminDashboard() {
           className="shadow-xl"
         />
       </div>
+
+      {/* Tamu Terbaru */}
+      <TamuTerbaruWidget href="/admin/tamu" />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Monthly Occupancy Chart */}

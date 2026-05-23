@@ -6,6 +6,7 @@ import {
 } from "firebase/auth";
 import {
   Timestamp,
+  addDoc,
   collection,
   doc,
   getDocs,
@@ -14,7 +15,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Kamar, Pendaftaran, Penghuni, UserProfile } from "@/types";
+import type { Kamar, Kegiatan, KategoriKegiatan, Laporan, Pendaftaran, Penghuni, StatusLaporan, UserProfile } from "@/types";
 
 // Data mahasiswa dari list yang diberikan
 const MAHASISWA = [
@@ -296,4 +297,193 @@ export async function seedAsramaData(
   await batch.commit();
 
   return { kamarDibuat, mahasiswaDibuat, pendaftaranDibuat, penghuniDibuat, errors };
+}
+
+// ─── KEGIATAN DEMO ───────────────────────────────────────────────────────────
+
+interface KegiatanSeedItem {
+  kategori: KategoriKegiatan;
+  judul: string;
+  deskripsi: string;
+  /** Hari relatif dari sekarang. Negatif = sudah lewat (historis). */
+  daysFromNow: number;
+  hour: number;
+  lokasi?: string;
+}
+
+const DEMO_KEGIATAN: KegiatanSeedItem[] = [
+  // ── Komunitas (kegiatan santai/sosial) ───────────────────────────
+  {
+    kategori: "komunitas",
+    judul: "Futsal Bersama",
+    deskripsi: "Olahraga rutin akhir pekan. Yang minat boleh ikut, gratis. Bawa kostum & sepatu olahraga.",
+    daysFromNow: 2, hour: 17,
+    lokasi: "Lapangan Futsal Salemba",
+  },
+  {
+    kategori: "komunitas",
+    judul: "Nobar Final Liga",
+    deskripsi: "Nonton bareng pertandingan final. Snack & minuman ringan disediakan pengurus.",
+    daysFromNow: 5, hour: 20,
+    lokasi: "Ruang Komunal Lt. 1",
+  },
+  {
+    kategori: "komunitas",
+    judul: "Ngopi & Diskusi Santai",
+    deskripsi: "Sharing pengalaman kuliah, info beasiswa, dan tips magang. Open discussion.",
+    daysFromNow: 4, hour: 19,
+    lokasi: "Aula Asrama",
+  },
+
+  // ── Wajib (kerja bakti, rapat — semua harus hadir) ────────────────
+  {
+    kategori: "wajib",
+    judul: "Kerja Bakti Bulanan",
+    deskripsi: "Bersih-bersih seluruh area asrama: koridor, halaman, dapur bersama, dan kamar mandi. Wajib hadir semua penghuni.",
+    daysFromNow: 7, hour: 7,
+    lokasi: "Seluruh Area Asrama",
+  },
+  {
+    kategori: "wajib",
+    judul: "Rapat Pengurus & Penghuni",
+    deskripsi: "Pembahasan iuran bulanan, jadwal piket, dan evaluasi tata tertib. Wajib dihadiri minimal 1 perwakilan per kamar.",
+    daysFromNow: 10, hour: 19,
+    lokasi: "Aula Asrama",
+  },
+  {
+    kategori: "wajib",
+    judul: "Gotong Royong Persiapan HUT RI",
+    deskripsi: "Dekorasi asrama untuk peringatan kemerdekaan: pasang bendera, hias halaman, dan persiapan lomba.",
+    daysFromNow: 14, hour: 8,
+    lokasi: "Halaman Depan & Aula",
+  },
+];
+
+export async function seedKegiatanDemo(
+  adminUid: string,
+  adminNama: string
+): Promise<{ created: number; skipped: number }> {
+  const existing = await getDocs(collection(db, "kegiatan"));
+  const existingJuduls = new Set(
+    existing.docs.map((d) => (d.data() as Kegiatan).judul)
+  );
+
+  let created = 0;
+  let skipped = 0;
+  const now = Timestamp.now();
+
+  for (const k of DEMO_KEGIATAN) {
+    if (existingJuduls.has(k.judul)) {
+      skipped++;
+      continue;
+    }
+    const tanggal = new Date();
+    tanggal.setDate(tanggal.getDate() + k.daysFromNow);
+    tanggal.setHours(k.hour, 0, 0, 0);
+
+    await addDoc(collection(db, "kegiatan"), {
+      judul: k.judul,
+      deskripsi: k.deskripsi,
+      kategori: k.kategori,
+      dibuatOlehUid: adminUid,
+      dibuatOlehNama: adminNama,
+      dibuatOlehRole: "admin",
+      tanggalMulai: Timestamp.fromDate(tanggal),
+      ...(k.lokasi ? { lokasi: k.lokasi } : {}),
+      createdAt: now,
+      updatedAt: now,
+    });
+    created++;
+  }
+
+  return { created, skipped };
+}
+
+// ─── LAPORAN DEMO ────────────────────────────────────────────────────────────
+
+interface LaporanSeedItem {
+  judul: string;
+  deskripsi: string;
+  status: StatusLaporan;
+  tanggapanAdmin?: string;
+  daysAgoCreated: number;
+  daysAgoDitanggapi?: number;
+}
+
+const DEMO_LAPORAN: LaporanSeedItem[] = [
+  {
+    judul: "Kran Wastafel Bocor",
+    deskripsi: "Kran di wastafel dapur lantai 2 bocor sejak kemarin. Air menetes terus walau sudah dikencangkan.",
+    status: "selesai",
+    tanggapanAdmin: "Teknisi sudah datang, kran sudah diganti. Terima kasih laporannya.",
+    daysAgoCreated: 7,
+    daysAgoDitanggapi: 5,
+  },
+  {
+    judul: "Lampu Koridor Mati",
+    deskripsi: "Lampu koridor depan kamar 105 sudah mati 2 hari. Gelap kalau malam.",
+    status: "diproses",
+    tanggapanAdmin: "Sedang dibelikan lampu baru, akan dipasang besok.",
+    daysAgoCreated: 3,
+    daysAgoDitanggapi: 1,
+  },
+  {
+    judul: "WiFi Sering Putus",
+    deskripsi: "WiFi di lantai 2 sering putus terutama jam malam. Mengganggu kuliah online.",
+    status: "diproses",
+    tanggapanAdmin: "Insyaallah minggu depan teknisi ISP datang untuk cek router.",
+    daysAgoCreated: 2,
+    daysAgoDitanggapi: 1,
+  },
+  {
+    judul: "Pintu Pagar Susah Ditutup",
+    deskripsi: "Engsel pagar depan sudah longgar, susah ditutup rapat.",
+    status: "baru",
+    daysAgoCreated: 1,
+  },
+];
+
+export async function seedLaporanDemo(
+  pelaporUid: string,
+  pelaporNama: string,
+  pelaporKamar: string | undefined,
+  adminUid?: string,
+  adminNama?: string
+): Promise<{ created: number; skipped: number }> {
+  const existing = await getDocs(collection(db, "laporan"));
+  const existingJuduls = new Set(
+    existing.docs.map((d) => (d.data() as Laporan).judul)
+  );
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const l of DEMO_LAPORAN) {
+    if (existingJuduls.has(l.judul)) {
+      skipped++;
+      continue;
+    }
+    const createdAt = Timestamp.fromMillis(Date.now() - l.daysAgoCreated * 86_400_000);
+    const ditanggapiAt = l.daysAgoDitanggapi
+      ? Timestamp.fromMillis(Date.now() - l.daysAgoDitanggapi * 86_400_000)
+      : undefined;
+
+    await addDoc(collection(db, "laporan"), {
+      pelaporUid,
+      pelaporNama,
+      ...(pelaporKamar ? { pelaporKamar } : {}),
+      judul: l.judul,
+      deskripsi: l.deskripsi,
+      status: l.status,
+      ...(l.tanggapanAdmin ? { tanggapanAdmin: l.tanggapanAdmin } : {}),
+      ...(adminUid && l.tanggapanAdmin ? { ditanggapiOlehUid: adminUid } : {}),
+      ...(adminNama && l.tanggapanAdmin ? { ditanggapiOlehNama: adminNama } : {}),
+      ...(ditanggapiAt ? { ditanggapiAt } : {}),
+      createdAt,
+      updatedAt: ditanggapiAt ?? createdAt,
+    });
+    created++;
+  }
+
+  return { created, skipped };
 }

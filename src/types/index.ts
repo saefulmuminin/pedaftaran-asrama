@@ -138,10 +138,9 @@ export interface TataTertibItem {
   updatedAt: Timestamp;
 }
 
-export type KategoriKegiatan = "komunitas" | "wajib" | "laporan";
-// komunitas = dibuat mahasiswa untuk teman-teman (acara, ngumpul, dll)
-// wajib     = dibuat admin (kerja bakti, rapat) — semua wajib hadir
-// laporan   = mahasiswa lapor kegiatan asrama ke pengurus
+export type KategoriKegiatan = "komunitas" | "wajib";
+// komunitas = kegiatan santai/sosial
+// wajib     = kerja bakti, rapat — semua penghuni wajib hadir
 
 export interface Kegiatan {
   id: string;
@@ -156,11 +155,36 @@ export interface Kegiatan {
   tanggalMulai: Timestamp;
   tanggalSelesai?: Timestamp;
   lokasi?: string;
-  // Untuk laporan ke pengurus
-  ditanggapiAdmin?: boolean;
-  catatanAdmin?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+export type StatusLaporan = "baru" | "diproses" | "selesai" | "ditolak";
+
+export interface Laporan {
+  id: string;
+  // Pelapor
+  pelaporUid: string;
+  pelaporNama: string;
+  pelaporKamar?: string;
+  // Isi laporan
+  judul: string;
+  deskripsi: string;
+  fotoUrl?: string; // base64 data URL
+  // Tanggapan admin
+  status: StatusLaporan;
+  tanggapanAdmin?: string;
+  ditanggapiOlehUid?: string;
+  ditanggapiOlehNama?: string;
+  ditanggapiAt?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface TamuItem {
+  nama: string;
+  hubungan: string; // teman, keluarga, dosen, dll
+  noHp?: string;
 }
 
 export interface Tamu {
@@ -169,9 +193,13 @@ export interface Tamu {
   dilaporOlehUid: string;
   dilaporOlehNama: string;
   dilaporOlehRole: UserRole;
-  // Data tamu
+  // Daftar tamu (1 kunjungan bisa lebih dari satu tamu).
+  // Selalu di-isi untuk dokumen baru. Data lama mungkin hanya pakai field legacy
+  // (namaTamu/hubungan/noHpTamu) — code display fallback ke field legacy bila tamus kosong.
+  tamus?: TamuItem[];
+  // Legacy / fallback (di-isi dari tamu pertama untuk backward compat dengan data lama)
   namaTamu: string;
-  hubungan: string; // teman, keluarga, dosen, dll
+  hubungan: string;
   noHpTamu?: string;
   // Tujuan kunjungan
   untukPenghuni?: string; // nama penghuni yang dikunjungi

@@ -10,16 +10,16 @@ import {
   DoorOpen,
   Bell,
   User,
-  FileText,
   CheckSquare,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRole } from "@/hooks/useRole";
 
 const mahasiswaMenu = [
   { href: "/mahasiswa/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/mahasiswa/pendaftaran", label: "Daftar", icon: FileText },
   { href: "/mahasiswa/status", label: "Status", icon: CheckSquare },
+  { href: "/mahasiswa/tagihan", label: "Tagihan", icon: Wallet },
   { href: "/mahasiswa/notifikasi", label: "Notif", icon: Bell },
   { href: "/mahasiswa/profil", label: "Profil", icon: User },
 ];

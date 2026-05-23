@@ -26,8 +26,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
+  ArrowUp,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 
 const features = [
@@ -77,7 +78,12 @@ const fasilitasDetail = [
       "/fasilitas/WhatsApp Image 2026-05-13 at 14.54.00.jpeg",
       "/fasilitas/WhatsApp Image 2026-05-13 at 14.54.00 (1).jpeg",
     ],
-    features: ["Kasur & Bantal", "Lemari Pakaian", "Meja & Kursi Belajar", "Ventilasi Bagus"],
+    features: [
+      "Kasur & Bantal",
+      "Lemari Pakaian",
+      "Meja & Kursi Belajar",
+      "Ventilasi Bagus",
+    ],
   },
   {
     id: "kamar-mandi",
@@ -85,10 +91,13 @@ const fasilitasDetail = [
     label: "Kamar Mandi",
     desc: "Kamar mandi bersih dengan lantai & dinding keramik rapi, ventilasi udara yang baik, dan pasokan air bersih melimpah.",
     mainImage: "/fasilitas/kamar_mandi_asrama.png",
-    images: [
-      "/fasilitas/kamar_mandi_asrama.png",
+    images: ["/fasilitas/kamar_mandi_asrama.png"],
+    features: [
+      "Lantai Keramik",
+      "Ember & Gayung Baru",
+      "Sanitasi Terjaga",
+      "Air Lancar",
     ],
-    features: ["Lantai Keramik", "Ember & Gayung Baru", "Sanitasi Terjaga", "Air Lancar"],
   },
   {
     id: "dapur",
@@ -96,10 +105,13 @@ const fasilitasDetail = [
     label: "Dapur Bersama",
     desc: "Dapur bersama yang luas dengan kompor gas, wastafel cuci piring, dan peralatan masak lengkap untuk kebutuhan sehari-hari.",
     mainImage: "/fasilitas/dapur_asrama.png",
-    images: [
-      "/fasilitas/dapur_asrama.png",
+    images: ["/fasilitas/dapur_asrama.png"],
+    features: [
+      "Kompor Gas",
+      "Wastafel Bersih",
+      "Peralatan Memasak",
+      "Tabung LPG",
     ],
-    features: ["Kompor Gas", "Wastafel Bersih", "Peralatan Memasak", "Tabung LPG"],
   },
   {
     id: "parkiran",
@@ -107,10 +119,13 @@ const fasilitasDetail = [
     label: "Parkiran Motor",
     desc: "Area parkir kendaraan roda dua yang terlindungi kanopi kokoh, aman, dan tertata rapi di pekarangan depan asrama.",
     mainImage: "/fasilitas/WhatsApp Image 2026-05-13 at 14.53.51.jpeg",
-    images: [
-      "/fasilitas/WhatsApp Image 2026-05-13 at 14.53.51.jpeg",
+    images: ["/fasilitas/WhatsApp Image 2026-05-13 at 14.53.51.jpeg"],
+    features: [
+      "Kanopi Pelindung",
+      "Kapasitas Luas",
+      "Aman & Terpantau",
+      "Gerbang Utama",
     ],
-    features: ["Kanopi Pelindung", "Kapasitas Luas", "Aman & Terpantau", "Gerbang Utama"],
   },
   {
     id: "kebersihan",
@@ -122,7 +137,12 @@ const fasilitasDetail = [
       "/fasilitas/WhatsApp Image 2026-05-13 at 14.53.50.jpeg",
       "/fasilitas/WhatsApp Image 2026-05-13 at 14.54.00 (2).jpeg",
     ],
-    features: ["Koridor Bersih", "Lantai Mengkilap", "Bebas Sampah", "Lingkungan Asri"],
+    features: [
+      "Koridor Bersih",
+      "Lantai Mengkilap",
+      "Bebas Sampah",
+      "Lingkungan Asri",
+    ],
   },
   {
     id: "wifi",
@@ -130,10 +150,13 @@ const fasilitasDetail = [
     label: "High-Speed WiFi",
     desc: "Jaringan internet berkecepatan tinggi terpasang merata di setiap sudut area untuk menunjang aktivitas belajar online.",
     mainImage: "/fasilitas/wifi_asrama.png",
-    images: [
-      "/fasilitas/wifi_asrama.png",
+    images: ["/fasilitas/wifi_asrama.png"],
+    features: [
+      "Koneksi Unlimited",
+      "Router Terbaru",
+      "Stabil untuk Kuliah",
+      "Menjangkau Kamar",
     ],
-    features: ["Koneksi Unlimited", "Router Terbaru", "Stabil untuk Kuliah", "Menjangkau Kamar"],
   },
   {
     id: "cctv",
@@ -141,10 +164,13 @@ const fasilitasDetail = [
     label: "Keamanan CCTV",
     desc: "Dilengkapi kamera CCTV di berbagai titik strategis luar dan dalam asrama untuk menjamin keamanan optimal 24/7.",
     mainImage: "/fasilitas/cctv_asrama.png",
-    images: [
-      "/fasilitas/cctv_asrama.png",
+    images: ["/fasilitas/cctv_asrama.png"],
+    features: [
+      "Pantauan 24/7",
+      "Banyak Titik Kamera",
+      "Area Luar & Dalam",
+      "Aman & Nyaman",
     ],
-    features: ["Pantauan 24/7", "Banyak Titik Kamera", "Area Luar & Dalam", "Aman & Nyaman"],
   },
 ];
 
@@ -191,6 +217,7 @@ const testimonials = [
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showScroll, setShowScroll] = useState(false);
   const [activeFacility, setActiveFacility] = useState(fasilitasDetail[0].id);
   const [activeImage, setActiveImage] = useState(fasilitasDetail[0].mainImage);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -213,8 +240,25 @@ export default function LandingPage() {
     const idx = currentFacility.images.indexOf(lightbox);
     if (idx === -1) return;
     const nextIdx =
-      (idx + dir + currentFacility.images.length) % currentFacility.images.length;
+      (idx + dir + currentFacility.images.length) %
+      currentFacility.images.length;
     setLightbox(currentFacility.images[nextIdx]);
+  };
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 300) {
+        setShowScroll(true);
+      } else {
+        setShowScroll(false);
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -373,13 +417,6 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
             <div className="flex-1 text-center lg:text-left space-y-8 animate-in fade-in slide-in-bottom duration-1000">
-              <div className="inline-flex items-center gap-2 bg-primary-50 border border-primary-100 rounded-full px-5 py-2 text-sm font-bold text-primary-700">
-                <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                <span className="uppercase tracking-widest text-[10px]">
-                  Sistem Pendaftaran Resmi Online — 2024
-                </span>
-              </div>
-
               <h1 className="text-5xl sm:text-7xl font-black leading-[1.05] text-slate-900 tracking-tight">
                 Hunian Premium <br />
                 Untuk <span className="text-primary-600">Mahasiswa</span> <br />
@@ -435,7 +472,6 @@ export default function LandingPage() {
                   className="w-full h-full object-cover aspect-[4/5] lg:aspect-square"
                 />
               </div>
-
 
               {/* Decorative background */}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-primary-50 rounded-full blur-3xl -z-10 opacity-60" />
@@ -592,7 +628,8 @@ export default function LandingPage() {
               Fasilitas Lengkap & Nyaman
             </h2>
             <p className="text-slate-400 font-medium mt-5 max-w-xl mx-auto">
-              Jelajahi setiap fasilitas asrama melalui galeri foto interaktif di bawah ini.
+              Jelajahi setiap fasilitas asrama melalui galeri foto interaktif di
+              bawah ini.
             </p>
           </div>
 
@@ -659,7 +696,11 @@ export default function LandingPage() {
                         }`}
                         aria-label="Ganti foto"
                       >
-                        <img src={img} alt="" className="w-full h-full object-cover" />
+                        <img
+                          src={img}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
                       </button>
                     );
                   })}
@@ -697,7 +738,9 @@ export default function LandingPage() {
               </ul>
 
               <div className="mt-6 pt-6 border-t border-white/10 text-xs font-bold text-slate-400">
-                <span className="text-primary-400">{currentFacility.images.length}</span>{" "}
+                <span className="text-primary-400">
+                  {currentFacility.images.length}
+                </span>{" "}
                 foto tersedia untuk fasilitas ini
               </div>
             </div>
@@ -944,6 +987,17 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Tombol Scroll to Top (SEO & Smooth Navigation) */}
+      <button
+        onClick={scrollToTop}
+        className={`fixed bottom-8 right-8 z-50 p-4 rounded-full bg-primary-600 text-white shadow-premium hover:bg-primary-700 hover:scale-110 hover:-translate-y-1 transition-all duration-300 ${
+          showScroll ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none"
+        }`}
+        aria-label="Scroll to top"
+      >
+        <ArrowUp className="w-6 h-6" />
+      </button>
     </div>
   );
 }

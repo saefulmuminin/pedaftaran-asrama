@@ -16,6 +16,9 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { getPendaftaranByUser, getNotifikasiByUser } from "@/lib/firestore";
 import { JadwalSholatWidget } from "@/components/features/JadwalSholatWidget";
+import { KegiatanMahasiswaWidget } from "@/components/features/KegiatanMahasiswaWidget";
+import { TamuTerbaruWidget } from "@/components/features/TamuTerbaruWidget";
+import { TransparansiTagihanWidget } from "@/components/features/TransparansiTagihanWidget";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -75,13 +78,20 @@ export default function MahasiswaDashboard() {
         </div>
       </div>
 
-      <JadwalSholatWidget />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <JadwalSholatWidget />
+        <KegiatanMahasiswaWidget />
+      </div>
+
+      <TamuTerbaruWidget href="/mahasiswa/tamu" />
+
+      <TransparansiTagihanWidget />
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {[
-          { href: "/mahasiswa/pendaftaran", icon: FileText, label: "Form Pendaftaran", color: "bg-rose-50 text-rose-600" },
           { href: "/mahasiswa/status", icon: CheckCircle, label: "Status Pendaftaran", color: "bg-primary-50 text-primary-600" },
+          { href: "/mahasiswa/tagihan", icon: FileText, label: "Tagihan", color: "bg-rose-50 text-rose-600" },
           { href: "/mahasiswa/notifikasi", icon: Bell, label: "Pusat Notifikasi", color: "bg-amber-50 text-amber-600" },
           { href: "/mahasiswa/profil", icon: User, label: "Profil Saya", color: "bg-sky-50 text-sky-600" },
         ].map((item) => {
@@ -217,18 +227,13 @@ export default function MahasiswaDashboard() {
               </Card>
             ) : (
               <Card className="p-12 text-center border-none shadow-premium bg-white/50 backdrop-blur-md">
-                <div className="w-24 h-24 bg-primary-50 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 animate-bounce duration-3000">
+                <div className="w-24 h-24 bg-primary-50 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8">
                   <BookOpen className="w-12 h-12 text-primary-600" />
                 </div>
-                <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-3">Belum Ada Pendaftaran</h3>
-                <p className="text-slate-500 font-medium max-w-sm mx-auto mb-10 leading-relaxed">
-                  Kamu belum mengajukan permohonan hunian asrama. Lengkapi formulir pendaftaran untuk memulai proses seleksi.
+                <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-3">Data Pendaftaran Tidak Tersedia</h3>
+                <p className="text-slate-500 font-medium max-w-sm mx-auto leading-relaxed">
+                  Akun Anda belum tertaut dengan dokumen pendaftaran. Hubungi pengurus asrama untuk verifikasi.
                 </p>
-                <Link href="/mahasiswa/pendaftaran">
-                  <Button className="px-10 py-6 text-lg rounded-2xl shadow-premium hover:scale-105 active:scale-95 transition-all">
-                    Mulai Daftar Sekarang <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button>
-                </Link>
               </Card>
             )}
           </div>

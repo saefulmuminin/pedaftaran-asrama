@@ -78,6 +78,7 @@ export default function DetailPendaftarPage() {
   const [approveModal, setApproveModal] = useState(false);
   const [rejectModal, setRejectModal] = useState(false);
   const [verifyModal, setVerifyModal] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const [selectedKamar, setSelectedKamar] = useState("");
   const [rejectNote, setRejectNote] = useState("");
@@ -286,9 +287,13 @@ export default function DetailPendaftarPage() {
     );
   }
 
+  // Tampilkan semua kamar yang masih ada slot kosong (terisi < kapasitas).
+  // Tidak filter strict by jenisKelamin — admin yang putuskan (data demo banyak yang gender-nya sama).
   const availableKamar = kamarList.filter(
-    (k) => k.jenisKelamin === (pendaftaran.jenisKelamin === "L" ? "L" : "P") && k.status === "tersedia"
+    (k) => k.status !== "perawatan" && k.terisi < k.kapasitas
   );
+
+  const expectedGender = pendaftaran.jenisKelamin === "L" ? "L" : "P";
 
   return (
     <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-bottom duration-700 pb-20">
@@ -469,39 +474,57 @@ export default function DetailPendaftarPage() {
             </div>
           </Card>
 
-          <Card className="p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem]">
-            <div className="flex items-center gap-4 mb-8 pb-4 border-b border-slate-50">
+          <Card className="p-6 md:p-8 border-none shadow-premium bg-white/80 backdrop-blur-md rounded-[2.5rem]">
+            <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-50">
               <div className="w-8 h-8 bg-primary-50 rounded-lg flex items-center justify-center text-primary-600">
                 <FileImage className="w-4 h-4" />
               </div>
               <h3 className="text-base font-extrabold text-slate-900 tracking-tight">Berkas Digital</h3>
             </div>
-            
-            <div className="grid grid-cols-1 gap-3">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
                 { label: "Pas Foto Terbaru", url: pendaftaran.fotoUrl },
                 { label: "KTP (Digital)", url: pendaftaran.ktpUrl },
                 { label: "Kartu Mahasiswa", url: pendaftaran.ktmUrl },
                 { label: "Surat Keterangan Aktif", url: pendaftaran.suratKeteranganUrl },
               ].map((doc, idx) => (
-                <div key={idx}>
+                <div key={idx} className="space-y-2">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">
+                    {doc.label}
+                  </p>
                   {doc.url ? (
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:bg-primary-50 hover:border-primary-100 transition-all group">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm group-hover:text-primary-600">
-                          <FileImage className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs font-bold text-slate-600 group-hover:text-primary-700">{doc.label}</span>
+                    <div className="group relative overflow-hidden rounded-2xl border-2 border-slate-100 bg-slate-50 aspect-[4/3]">
+                      <img
+                        src={doc.url}
+                        alt={doc.label}
+                        className="w-full h-full object-contain cursor-zoom-in transition group-hover:scale-[1.02]"
+                        onClick={() => setLightbox(doc.url ?? null)}
+                      />
+                      {/* Toolbar overlay */}
+                      <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                        <button
+                          type="button"
+                          onClick={() => setLightbox(doc.url ?? null)}
+                          className="p-2 rounded-xl bg-slate-900/70 backdrop-blur-md text-white border border-white/10 hover:bg-slate-900/85"
+                          title="Perbesar"
+                        >
+                          <FileImage className="w-3.5 h-3.5" />
+                        </button>
+                        <a
+                          href={doc.url}
+                          download={`${doc.label}.jpg`}
+                          className="p-2 rounded-xl bg-slate-900/70 backdrop-blur-md text-white border border-white/10 hover:bg-slate-900/85"
+                          title="Download"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5 rotate-[-90deg]" />
+                        </a>
                       </div>
-                      <ArrowLeft className="w-4 h-4 text-slate-300 rotate-180 group-hover:text-primary-600 group-hover:translate-x-1 transition-all" />
-                    </a>
+                    </div>
                   ) : (
-                    <div className="flex items-center gap-3 p-4 bg-slate-50/50 border border-dashed border-slate-200 rounded-2xl grayscale opacity-50">
-                      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-                        <FileImage className="w-4 h-4 text-slate-300" />
-                      </div>
-                      <span className="text-xs font-bold text-slate-400 italic">Belum Diupload</span>
+                    <div className="flex flex-col items-center justify-center gap-2 p-6 bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-2xl aspect-[4/3]">
+                      <FileImage className="w-8 h-8 text-slate-300" />
+                      <span className="text-xs font-bold text-slate-400 italic">Belum diupload</span>
                     </div>
                   )}
                 </div>
@@ -566,7 +589,20 @@ export default function DetailPendaftarPage() {
                       {selectedKamar === k.id && <div className="w-2 h-2 bg-primary-600 rounded-full animate-in zoom-in-50" />}
                     </div>
                     <div>
-                      <p className={cn("font-black tracking-tight", selectedKamar === k.id ? "text-primary-700" : "text-slate-700")}>KAMAR {k.nomorKamar}</p>
+                      <div className="flex items-center gap-2">
+                        <p className={cn("font-black tracking-tight", selectedKamar === k.id ? "text-primary-700" : "text-slate-700")}>KAMAR {k.nomorKamar}</p>
+                        <span className={cn(
+                          "text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md",
+                          k.jenisKelamin === "L" ? "bg-sky-100 text-sky-700" : "bg-rose-100 text-rose-700"
+                        )}>
+                          {k.jenisKelamin === "L" ? "Putra" : "Putri"}
+                        </span>
+                        {k.jenisKelamin !== expectedGender && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700">
+                            ⚠ Beda Gender
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Lantai {k.lantai}</p>
                     </div>
                   </div>
@@ -620,6 +656,28 @@ export default function DetailPendaftarPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Lightbox berkas digital */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[300] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 md:p-10 animate-in fade-in duration-200"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-5 right-5 p-3 rounded-2xl bg-white/10 text-white border border-white/10 hover:bg-white/20 transition"
+            aria-label="Tutup"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <img
+            src={lightbox}
+            alt="Preview berkas"
+            className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
