@@ -132,6 +132,114 @@ export async function verifySignature(
   return expected === signatureKey;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE API — untuk render custom payment UI (tanpa popup Snap)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CoreChargeBank = "bca" | "bni" | "bri" | "permata";
+
+export interface CoreChargeParams {
+  orderId: string;
+  grossAmount: number;
+  customer: { first_name: string; email: string; phone?: string };
+  itemDetails: Array<{ id: string; name: string; price: number; quantity: number }>;
+  /** Salah satu: bca_va, bni_va, bri_va, permata_va, echannel, gopay, shopeepay */
+  method: string;
+}
+
+export interface CoreChargeAction {
+  name: string;
+  method: string;
+  url: string;
+}
+
+export interface CoreChargeResponse {
+  status_code: string;
+  status_message: string;
+  transaction_id: string;
+  order_id: string;
+  gross_amount: string;
+  payment_type: string;
+  transaction_time: string;
+  transaction_status: string;
+  fraud_status?: string;
+  // VA fields (bank_transfer)
+  va_numbers?: Array<{ bank: string; va_number: string }>;
+  // Permata
+  permata_va_number?: string;
+  // Mandiri Bill (echannel)
+  bill_key?: string;
+  biller_code?: string;
+  // GoPay / ShopeePay
+  actions?: CoreChargeAction[];
+  // QR
+  qr_string?: string;
+  expiry_time?: string;
+}
+
+const API_CHARGE = isProduction
+  ? "https://api.midtrans.com/v2/charge"
+  : "https://api.sandbox.midtrans.com/v2/charge";
+
+function buildChargeBody(params: CoreChargeParams): Record<string, unknown> {
+  const base = {
+    transaction_details: {
+      order_id: params.orderId,
+      gross_amount: params.grossAmount,
+    },
+    customer_details: params.customer,
+    item_details: params.itemDetails,
+  };
+
+  switch (params.method) {
+    case "bca_va":
+    case "bni_va":
+    case "bri_va":
+    case "permata_va": {
+      const bank = params.method.replace("_va", "") as CoreChargeBank;
+      return { ...base, payment_type: "bank_transfer", bank_transfer: { bank } };
+    }
+    case "echannel":
+      return {
+        ...base,
+        payment_type: "echannel",
+        echannel: {
+          bill_info1: "Pembayaran",
+          bill_info2: "Iuran Asrama",
+        },
+      };
+    case "gopay":
+      return { ...base, payment_type: "gopay" };
+    case "shopeepay":
+      return { ...base, payment_type: "shopeepay" };
+    default:
+      throw new Error(`Method tidak didukung untuk Core API: ${params.method}`);
+  }
+}
+
+export async function chargeCore(params: CoreChargeParams): Promise<CoreChargeResponse> {
+  if (!SERVER_KEY) {
+    throw new Error("MIDTRANS_SERVER_KEY belum di-set di .env.local");
+  }
+
+  const res = await fetch(API_CHARGE, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: authHeader(),
+    },
+    body: JSON.stringify(buildChargeBody(params)),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Midtrans charge error ${res.status}: ${text}`);
+  }
+
+  return res.json() as Promise<CoreChargeResponse>;
+}
+
 /**
  * Map status Midtrans → status internal Tagihan.
  */

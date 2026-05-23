@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import Script from "next/script";
+import { useRouter } from "next/navigation";
 import { Wallet, CheckCircle, Clock, AlertTriangle, XCircle, Loader2 } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 import {
@@ -16,12 +16,6 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import type { Tagihan, StatusTagihan } from "@/types";
 
-const MIDTRANS_SNAP_URL = process.env.MIDTRANS_IS_PRODUCTION === "true"
-  ? "https://app.midtrans.com/snap/snap.js"
-  : "https://app.sandbox.midtrans.com/snap/snap.js";
-
-const CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
-
 const STATUS_META: Record<StatusTagihan, { label: string; color: string; Icon: React.ElementType }> = {
   unpaid: { label: "Belum Bayar", color: "bg-amber-50 text-amber-700 border-amber-200", Icon: AlertTriangle },
   pending: { label: "Menunggu Pembayaran", color: "bg-sky-50 text-sky-700 border-sky-200", Icon: Clock },
@@ -30,18 +24,8 @@ const STATUS_META: Record<StatusTagihan, { label: string; color: string; Icon: R
   cancelled: { label: "Dibatalkan", color: "bg-rose-50 text-rose-700 border-rose-200", Icon: XCircle },
 };
 
-interface SnapWindow extends Window {
-  snap?: {
-    pay: (token: string, opts: {
-      onSuccess?: (result: { order_id: string }) => void;
-      onPending?: (result: { order_id: string }) => void;
-      onError?: (result: unknown) => void;
-      onClose?: () => void;
-    }) => void;
-  };
-}
-
 export default function MahasiswaTagihanPage() {
+  const router = useRouter();
   const { user, userProfile } = useAuth();
   const { success, error, info } = useToast();
   const [data, setData] = useState<Tagihan[]>([]);
@@ -182,82 +166,15 @@ export default function MahasiswaTagihanPage() {
     }
   };
 
-  // Step 2: User pilih metode → call API dengan enabled_payments = [selected] → buka Snap popup.
-  const handleConfirmPay = async () => {
-    if (!selectedTagihan || !userProfile) return;
+  // Step 2: User pilih metode → navigate ke halaman bayar custom (bukan Snap popup).
+  const handleConfirmPay = () => {
+    if (!selectedTagihan) return;
     if (!selectedMethodId) {
       error("Pilih metode pembayaran dulu.");
       return;
     }
-    if (!CLIENT_KEY) {
-      error("Midtrans Client Key belum dikonfigurasi.");
-      return;
-    }
-    const tagihan = selectedTagihan;
-    setPayingId(tagihan.id);
     setMethodModalOpen(false);
-    try {
-      const res = await fetch("/api/midtrans/create-transaction", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tagihanId: tagihan.id,
-          jumlah: tagihan.jumlah,
-          judul: tagihan.judul ?? "Iuran Bulanan",
-          periode: formatPeriode(tagihan.periode),
-          namaLengkap: tagihan.namaLengkap,
-          email: userProfile.email,
-          enabledPayments: [selectedMethodId],
-        }),
-      });
-      const json = await res.json() as { token?: string; orderId?: string; error?: string };
-      if (!res.ok || !json.token || !json.orderId) {
-        error(json.error ?? "Gagal membuat transaksi.");
-        return;
-      }
-
-      try {
-        await updateTagihan(tagihan.id, {
-          midtransOrderId: json.orderId,
-          midtransToken: json.token,
-          status: "pending",
-          expiredAt: Timestamp.fromMillis(Date.now() + 24 * 60 * 60 * 1000),
-        });
-      } catch (err) {
-        console.warn("Update tagihan gagal (lanjut bayar):", err);
-      }
-
-      const win = window as SnapWindow;
-      if (!win.snap) {
-        error("Midtrans Snap belum siap. Refresh halaman dan coba lagi.");
-        return;
-      }
-
-      const orderId = json.orderId;
-      win.snap.pay(json.token, {
-        onSuccess: async (result) => {
-          await verifyPayment(result.order_id, tagihan.id);
-          success("Pembayaran berhasil!");
-          await load();
-        },
-        onPending: async (result) => {
-          await verifyPayment(result.order_id, tagihan.id);
-          info("Pembayaran sedang diproses.");
-          await load();
-        },
-        onError: () => {
-          error("Pembayaran gagal.");
-        },
-        onClose: () => {
-          verifyPayment(orderId, tagihan.id);
-        },
-      });
-    } catch (err) {
-      console.error("Bayar gagal:", err);
-      error("Gagal memproses pembayaran.");
-    } finally {
-      setPayingId(null);
-    }
+    router.push(`/mahasiswa/bayar/${selectedTagihan.id}?method=${selectedMethodId}`);
   };
 
   const unpaidTotal = data
@@ -266,17 +183,11 @@ export default function MahasiswaTagihanPage() {
 
   return (
     <>
-      <Script
-        src={MIDTRANS_SNAP_URL}
-        data-client-key={CLIENT_KEY}
-        strategy="afterInteractive"
-      />
-
       <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-bottom duration-700 pb-20">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Tagihan Saya</h1>
           <p className="text-slate-500 font-medium mt-1">
-            Iuran bulanan asrama dapat dibayar via Midtrans (transfer bank, e-wallet, QRIS, dll).
+            Iuran bulanan asrama dapat dibayar via transfer bank, e-wallet, dll.
           </p>
         </div>
 
@@ -405,7 +316,7 @@ export default function MahasiswaTagihanPage() {
             </div>
           ) : (
             <>
-              {(["instant", "ewallet", "va", "card"] as PaymentCategory[]).map((cat) => {
+              {(["ewallet", "va"] as PaymentCategory[]).map((cat) => {
                 const inCat = availableMethods.filter((m) => m.category === cat);
                 if (inCat.length === 0) return null;
                 return (
